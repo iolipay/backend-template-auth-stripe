@@ -1,58 +1,35 @@
-# backend template
+# FastAPI MongoDB Authentication API Overview
 
-A FastAPI application with MongoDB integration, authentication, and future Stripe subscription support.
+Your backend API is a comprehensive authentication system built with FastAPI and MongoDB, providing essential user authentication and account management functionality. Here's what it does:
 
-## Setup
+## Core Functionality
 
-1. Install dependencies:
+- **User Registration**: Creates new user accounts storing email and securely hashed passwords
+- **User Authentication**: Validates credentials and issues access tokens (OAuth2/JWT based)
+- **Account Management**: Allows users to view their profile information
 
-```bash
-pip install -r requirements.txt
-```
+## Security Features
 
-2. Set up environment variables:
-
-```bash
-cp .env.example .env
-```
-
-Then edit `.env` with your configuration:
-
-```
-MONGODB_URL=your_mongodb_url
-JWT_SECRET=your_jwt_secret
-JWT_ALGORITHM=HS256
-```
-
-3. Run the application:
-
-```bash
-uvicorn app.main:app --reload
-```
-
-## Features
-
-- FastAPI REST API
-- MongoDB integration using Motor
-- JWT Authentication
-- User registration and login
-- Password hashing with bcrypt
-- Async database operations
-- Future Stripe subscription integration
+- **Email Verification**: Implements a verification workflow with tokenized email links
+- **Password Management**:
+  - Password change (for authenticated users)
+  - Password reset via email (forgot password flow)
+  - Secure token-based password reset mechanism
 
 ## API Endpoints
 
 ### Authentication
 
-- `POST /auth/register` - Register new user
-- `POST /auth/login` - Login user
-- `POST /auth/refresh` - Refresh access token
+- `/auth/register`: Creates new user accounts
+- `/auth/login`: Authenticates users and issues access tokens
+- `/auth/change-password`: Updates authenticated user passwords
+- `/auth/verify/{token}`: Verifies email addresses via tokens
+- `/auth/resend-verification`: Resends verification emails
+- `/auth/forgot-password`: Initiates password reset process
+- `/auth/reset-password/{token}`: Completes password reset with token
 
-### Users
+### User Management
 
-- `GET /users/me` - Get current user profile
-- `PUT /users/me` - Update user profile
+- `/users/me`: Retrieves authenticated user's profile information
 
-## Development
-
-### Running Tests
+The system includes proper validation, error handling, and rate limiting (for verification emails), following security best practices for user authentication workflows.
