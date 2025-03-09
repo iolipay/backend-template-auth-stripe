@@ -33,10 +33,31 @@ Your backend API is a comprehensive authentication system built with FastAPI and
 - `/users/me`: Retrieves authenticated user's profile information
 
 ### .env
+
 ```
+# MongoDB settings
 MONGODB_URL=your_mongodb_url
-JWT_SECRET=your_jwt_secret
-JWT_ALGORITHM=HS256
+DATABASE_NAME=your_database_name
+
+# JWT Settings
+SECRET_KEY=your-secret-key-here
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Future Stripe Settings
+STRIPE_SECRET_KEY=your-stripe-secret-key
+STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
+
+# Email Settings
+MAIL_SERVER=your-mail-server
+MAIL_PORT=465
+MAIL_USERNAME=your-email@example.com
+MAIL_PASSWORD=your-email-password
+MAIL_FROM=your-email@example.com
+MAIL_FROM_NAME=YourAppName
+
+# Verification Settings
+VERIFICATION_TOKEN_EXPIRE_HOURS=24
 ```
 
 The system includes proper validation, error handling, and rate limiting (for verification emails), following security best practices for user authentication workflows.
