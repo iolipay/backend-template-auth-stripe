@@ -32,4 +32,10 @@ Your backend API is a comprehensive authentication system built with FastAPI and
 
 - `/users/me`: Retrieves authenticated user's profile information
 
+```
+MONGODB_URL=your_mongodb_url
+JWT_SECRET=your_jwt_secret
+JWT_ALGORITHM=HS256
+```
+
 The system includes proper validation, error handling, and rate limiting (for verification emails), following security best practices for user authentication workflows.
