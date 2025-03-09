@@ -5,7 +5,7 @@ from typing import Any, Dict
 from bson import ObjectId
 from jose import JWTError, jwt
 from app.core.security import create_access_token, get_password_hash, verify_password
-from app.core.exceptions import InvalidCredentialsError, InvalidEmailError, UserExistsError, InvalidTokenError, UserNotFoundError
+from app.core.exceptions import InvalidCredentialsError, InvalidEmailError, UserExistsError, InvalidTokenError, UserNotFoundError, IncorrectPasswordError
 from app.services.email import EmailService
 from app.core.config import settings
 import asyncio
@@ -235,3 +235,34 @@ class AuthService:
 
         except JWTError:
             raise InvalidTokenError()
+
+    async def update_password(self, user_id: str, current_password: str, new_password: str) -> None:
+        """
+        Update user's password after verifying current password.
+        
+        Args:
+            user_id: The ID of the user
+            current_password: The current password to verify
+            new_password: The new password to set
+            
+        Raises:
+            IncorrectPasswordError: If the current password is incorrect
+            UserNotFoundError: If the user is not found
+            ValueError: If the new password is same as current password
+        """
+        user = await self.db.users.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise UserNotFoundError("User not found")
+            
+        if not verify_password(current_password, user["hashed_password"]):
+            raise IncorrectPasswordError("Current password is incorrect")
+        
+        # Check if new password is same as current password
+        if verify_password(new_password, user["hashed_password"]):
+            raise ValueError("New password must be different from current password")
+            
+        hashed_password = get_password_hash(new_password)
+        await self.db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"hashed_password": hashed_password}}
+        )

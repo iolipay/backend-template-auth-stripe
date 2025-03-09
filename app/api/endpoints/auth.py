@@ -60,7 +60,8 @@ async def login(
     responses={
         200: {"description": "Password updated successfully"},
         401: {"description": "Current password is incorrect"},
-        403: {"description": "Not authenticated"}
+        403: {"description": "Not authenticated"},
+        400: {"description": "Invalid new password"}
     })
 async def change_password(
     password_data: PasswordChange,
@@ -71,18 +72,27 @@ async def change_password(
     Change the current user's password. Requires:
     - current_password: User's current password
     - new_password: New password (minimum 8 characters)
-
+    
+    The new password must be different from the current password.
     Must be authenticated with a valid access token.
     """
     try:
-        await auth_service.change_password(
+        await auth_service.update_password(
             current_user.id,
             password_data.current_password,
             password_data.new_password
         )
         return {"detail": "Password updated successfully"}
-    except IncorrectPasswordError as e:
-        raise e
+    except IncorrectPasswordError:
+        raise HTTPException(
+            status_code=401,
+            detail="Current password is incorrect"
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 @router.get("/verify/{token}",
     description="Verify user's email address",
