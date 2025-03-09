@@ -58,7 +58,7 @@ class EmailService:
     async def send_password_reset_email(self, email: str, token: str):
         """Send password reset email"""
         template = self.jinja_env.get_template('password_reset.html')
-        reset_url = f"{settings.FRONTEND_URL}/reset-password/{token}"
+        reset_url = f"{settings.FRONTEND_URL}/auth/reset-password/{token}"
         
         html = template.render(
             reset_url=reset_url,
