@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.core.config import settings
-from app.api.endpoints import auth, users
+from app.api.endpoints import auth, users, chat
 
 app = FastAPI(title="FastAPI MongoDB Auth")
 
@@ -18,6 +18,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router, prefix="/auth")
 app.include_router(users.router, prefix="/users")
+app.include_router(chat.router, prefix="/chat")
 
 @app.on_event("startup")
 async def startup_db_client():
