@@ -1,12 +1,13 @@
 # FastAPI MongoDB Authentication API Overview
 
-Your backend API is a comprehensive authentication system built with FastAPI and MongoDB, providing essential user authentication and account management functionality. Here's what it does:
+Your backend API is a comprehensive authentication system built with FastAPI and MongoDB, providing essential user authentication, account management, and chat functionality. Here's what it does:
 
 ## Core Functionality
 
 - **User Registration**: Creates new user accounts storing email and securely hashed passwords
 - **User Authentication**: Validates credentials and issues access tokens (OAuth2/JWT based)
 - **Account Management**: Allows users to view their profile information
+- **Chat Streaming**: Provides real-time chat streaming capabilities with message history
 
 ## Security Features
 
@@ -32,7 +33,22 @@ Your backend API is a comprehensive authentication system built with FastAPI and
 
 - `/users/me`: Retrieves authenticated user's profile information
 
-### .env
+### Chat
+
+- `/chat/`: Create a new chat or list existing chats
+- `/chat/{chat_id}`: Get, update, or delete a specific chat
+- `/chat/stream`: Stream chat responses in real-time
+
+## Chat Streaming Features
+
+The chat system provides:
+
+- **Real-time Streaming**: Messages are streamed word-by-word for a responsive experience
+- **Chat History**: All conversations are saved and can be retrieved later
+- **Chat Management**: Create, list, update, and delete chat conversations
+- **Continuation**: Continue existing conversations by providing a chat ID
+
+## .env
 
 ```
 # MongoDB settings
@@ -61,3 +77,49 @@ VERIFICATION_TOKEN_EXPIRE_HOURS=24
 ```
 
 The system includes proper validation, error handling, and rate limiting (for verification emails), following security best practices for user authentication workflows.
+
+## Using the Chat API
+
+### Creating a New Chat
+
+```
+POST /chat/
+Body: { "title": "Optional chat title" }
+```
+
+### Streaming a Response
+
+```
+POST /chat/stream
+Body: {
+  "message": "Your message here",
+  "chat_id": "optional-existing-chat-id"
+}
+```
+
+The response is a Server-Sent Events (SSE) stream that can be consumed by the frontend.
+
+### Listing Chats
+
+```
+GET /chat/?skip=0&limit=20
+```
+
+### Getting Chat Details
+
+```
+GET /chat/{chat_id}
+```
+
+### Updating Chat Title
+
+```
+PUT /chat/{chat_id}
+Body: { "title": "New chat title" }
+```
+
+### Deleting a Chat
+
+```
+DELETE /chat/{chat_id}
+```
