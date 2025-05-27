@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import Optional
 from app.api.deps import get_current_user, get_stripe_service
 from app.schemas.user import UserResponse
-from app.schemas.subscription import CheckoutSessionCreate, CheckoutSessionResponse, UserSubscriptionResponse
+from app.schemas.subscription import CheckoutSessionCreate, CheckoutSessionResponse, UserSubscriptionResponse, BillingPortalResponse
 from app.services.stripe import StripeService
 from app.core.subscription import require_subscription, SubscriptionLevel
 import logging
@@ -33,7 +33,7 @@ async def premium_page(current_user: UserResponse = Depends(get_current_user)):
     response_model=CheckoutSessionResponse,
     description="Create a Stripe checkout session for subscription",
     responses={
-        200: {"description": "Checkout session created successfully"},
+        200: {"description": "Checkout session created successfully or subscription change rejected"},
         400: {"description": "Invalid price ID or Stripe error"},
         401: {"description": "Not authenticated"}
     })
@@ -45,16 +45,36 @@ async def create_checkout_session(
     """
     Create a Stripe checkout session for subscription.
     
-    Use your Stripe Price IDs:
-    - Pro Plan ($19/month): "price_your_pro_price_id"
-    - Premium Plan ($49/month): "price_your_premium_price_id"
+    Parameters:
+    - price_id: Your Stripe Price ID (Pro: "price_1RTTLOPSkxSyOwymnX2URZid", Premium: "price_1RTTLkPSkxSyOwymwyO4cVgC")
+    - allow_subscription_change: If True (default), cancels existing subscription and creates new one. 
+                                If False, rejects the request if user already has active subscription.
+    
+    Returns either:
+    - Success: checkout_url and session_id for Stripe checkout
+    - Error: error message with current and requested plan details
     """
     try:
         session_data = await stripe_service.create_checkout_session(
             checkout_data.price_id, 
-            current_user.email
+            current_user.email,
+            checkout_data.allow_subscription_change
         )
-        return CheckoutSessionResponse(**session_data)
+        
+        # Check if we got an error response (subscription rejected)
+        if "error" in session_data:
+            return CheckoutSessionResponse(
+                error=session_data["error"],
+                current_plan=session_data.get("current_plan"),
+                requested_plan=session_data.get("requested_plan")
+            )
+        
+        # Success case
+        return CheckoutSessionResponse(
+            checkout_url=session_data["checkout_url"],
+            session_id=session_data["session_id"]
+        )
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -115,4 +135,36 @@ async def get_my_subscription(
         )
     except Exception as e:
         logger.error(f"Error getting subscription info: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/billing-portal",
+    response_model=BillingPortalResponse,
+    description="Create a Stripe billing portal session for subscription management",
+    responses={
+        200: {"description": "Billing portal session created successfully"},
+        400: {"description": "No Stripe customer found"},
+        401: {"description": "Not authenticated"}
+    })
+async def create_billing_portal(
+    current_user: UserResponse = Depends(get_current_user),
+    stripe_service: StripeService = Depends(get_stripe_service)
+) -> BillingPortalResponse:
+    """
+    Create a Stripe billing portal session for subscription management.
+    
+    This allows users to:
+    - Update payment methods
+    - View billing history
+    - Cancel subscriptions
+    - Download invoices
+    
+    Requires the user to have an existing Stripe customer (i.e., have created at least one subscription).
+    """
+    try:
+        portal_data = await stripe_service.create_billing_portal_session(current_user.email)
+        return BillingPortalResponse(portal_url=portal_data["portal_url"])
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating billing portal: {e}")
         raise HTTPException(status_code=500, detail="Internal server error") 

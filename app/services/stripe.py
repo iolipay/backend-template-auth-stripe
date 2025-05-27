@@ -14,13 +14,92 @@ class StripeService:
         self.db = db
         stripe.api_key = settings.STRIPE_SECRET_KEY
 
-    async def create_checkout_session(self, price_id: str, user_email: str) -> Dict[str, Any]:
-        """Create a Stripe checkout session for subscription"""
+    async def create_checkout_session(self, price_id: str, user_email: str, allow_subscription_change: bool = True) -> Dict[str, Any]:
+        """
+        Create a Stripe checkout session for subscription.
+        
+        Args:
+            price_id: Stripe Price ID for the subscription
+            user_email: User's email address
+            allow_subscription_change: If True, cancels existing subscription; if False, rejects new subscription
+            
+        Returns:
+            Dict with checkout_url and session_id, or error message
+        """
         try:
+            logger.info(f"Creating checkout session for {user_email} with price_id {price_id}")
+            
             # Get or create Stripe customer
             customer = await self._get_or_create_customer(user_email)
+            logger.info(f"Got customer: {customer.id}")
+            
+            # Check for existing active subscriptions
+            logger.info(f"Checking for existing subscriptions for customer {customer.id}")
+            existing_subscriptions = stripe.Subscription.list(
+                customer=customer.id,
+                status="active",
+                limit=10  # Check multiple in case there are any
+            )
+            
+            logger.info(f"Found {len(existing_subscriptions.data)} active subscriptions for customer {customer.id}")
+            
+            if existing_subscriptions.data:
+                # Get the current subscription plan name
+                current_subscription = existing_subscriptions.data[0]
+                logger.info(f"Current subscription: {current_subscription.id}")
+                
+                # Get price ID safely
+                try:
+                    current_price_id = current_subscription.items.data[0].price.id
+                    logger.info(f"Current price ID: {current_price_id}")
+                    current_plan = await self._get_plan_name_from_price_id(current_price_id)
+                    logger.info(f"Current plan: {current_plan}")
+                except Exception as e:
+                    logger.error(f"Error getting current price ID: {e}")
+                    current_plan = "unknown"
+                
+                # Get the new plan name
+                try:
+                    new_plan = await self._get_plan_name_from_price_id(price_id)
+                    logger.info(f"Requested plan: {new_plan}")
+                except Exception as e:
+                    logger.error(f"Error getting new plan name: {e}")
+                    new_plan = "unknown"
+                
+                if not allow_subscription_change:
+                    # Option 1: Reject new subscription
+                    logger.info(f"Rejecting subscription change from {current_plan} to {new_plan}")
+                    return {
+                        "error": f"You already have an active {current_plan} subscription. Please cancel your current subscription before creating a new one.",
+                        "current_plan": current_plan,
+                        "requested_plan": new_plan
+                    }
+                else:
+                    # Option 2: Cancel existing subscription(s) first
+                    logger.info(f"Canceling existing subscription(s) for customer {customer.id}")
+                    
+                    for subscription in existing_subscriptions.data:
+                        try:
+                            # Cancel immediately (not at period end)
+                            stripe.Subscription.delete(subscription.id)
+                            logger.info(f"Canceled subscription {subscription.id} for customer {customer.id}")
+                            
+                            # Update user in database
+                            await self.db.users.update_one(
+                                {"stripe_customer_id": customer.id},
+                                {
+                                    "$set": {
+                                        "subscription_plan": "free",
+                                        "subscription_status": "canceled"
+                                    }
+                                }
+                            )
+                        except stripe.error.StripeError as e:
+                            logger.error(f"Error canceling subscription {subscription.id}: {e}")
+                            # Continue with checkout creation even if cancellation fails
             
             # Create checkout session
+            logger.info(f"Creating Stripe checkout session for customer {customer.id}")
             session = stripe.checkout.Session.create(
                 customer=customer.id,
                 payment_method_types=['card'],
@@ -37,6 +116,7 @@ class StripeService:
                 }
             )
             
+            logger.info(f"Successfully created checkout session: {session.id}")
             return {
                 'checkout_url': session.url,
                 'session_id': session.id
@@ -47,6 +127,8 @@ class StripeService:
             raise HTTPException(status_code=400, detail=f"Stripe error: {str(e)}")
         except Exception as e:
             logger.error(f"Error creating checkout session: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail="Internal server error")
 
     async def _get_or_create_customer(self, email: str) -> stripe.Customer:
@@ -286,4 +368,34 @@ class StripeService:
             
         except Exception as e:
             logger.error(f"Error getting subscription status for user {user_id}: {e}")
-            raise HTTPException(status_code=500, detail="Error retrieving subscription status") 
+            raise HTTPException(status_code=500, detail="Error retrieving subscription status")
+
+    async def create_billing_portal_session(self, user_email: str) -> Dict[str, Any]:
+        """Create a Stripe billing portal session for subscription management"""
+        try:
+            # Get user's Stripe customer ID
+            user = await self.db.users.find_one({"email": user_email})
+            if not user or not user.get("stripe_customer_id"):
+                raise HTTPException(
+                    status_code=400, 
+                    detail="No active Stripe customer found. Please create a subscription first."
+                )
+            
+            # Create billing portal session
+            session = stripe.billing_portal.Session.create(
+                customer=user["stripe_customer_id"],
+                return_url=f"{settings.FRONTEND_URL}/dashboard"
+            )
+            
+            return {
+                "portal_url": session.url
+            }
+            
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error creating billing portal session: {e}")
+            raise HTTPException(status_code=400, detail=f"Stripe error: {str(e)}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error creating billing portal session: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error") 

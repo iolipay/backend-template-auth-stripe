@@ -4,10 +4,18 @@ from datetime import datetime
 
 class CheckoutSessionCreate(BaseModel):
     price_id: str
+    allow_subscription_change: bool = True  # If True, cancels existing; if False, rejects
 
 class CheckoutSessionResponse(BaseModel):
-    checkout_url: str
-    session_id: str
+    checkout_url: Optional[str] = None
+    session_id: Optional[str] = None
+    # Error fields for when subscription creation is rejected
+    error: Optional[str] = None
+    current_plan: Optional[str] = None
+    requested_plan: Optional[str] = None
+
+class BillingPortalResponse(BaseModel):
+    portal_url: str
 
 class UserSubscriptionResponse(BaseModel):
     email: str
