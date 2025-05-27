@@ -214,13 +214,11 @@ class StripeService:
 
     async def _get_plan_name_from_price_id(self, price_id: str) -> str:
         """Map Stripe price ID to plan name"""
-        # You can customize this mapping based on your Stripe price IDs
+        # Replace these with your actual Stripe Price IDs from your dashboard
         price_to_plan = {
-            # Add your actual Stripe price IDs here
-            "price_pro_monthly": "pro",
-            "price_pro_yearly": "pro", 
-            "price_premium_monthly": "premium",
-            "price_premium_yearly": "premium",
+            # TODO: Replace with your actual Price IDs from Stripe Dashboard
+            "price_1RTTLOPSkxSyOwymnX2URZid": "pro",      # $19/month Pro plan
+            "price_1RTTLkPSkxSyOwymwyO4cVgC": "premium",  # $49/month Premium plan
         }
         
         try:

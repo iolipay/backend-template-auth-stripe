@@ -5,11 +5,29 @@ from app.api.deps import get_current_user, get_stripe_service
 from app.schemas.user import UserResponse
 from app.schemas.subscription import CheckoutSessionCreate, CheckoutSessionResponse, UserSubscriptionResponse
 from app.services.stripe import StripeService
+from app.core.subscription import require_subscription, SubscriptionLevel
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Subscription"])
+
+@router.get("/free")
+async def free_page():
+    """Free plan page - accessible to all users"""
+    return {"message": "free page"}
+
+@router.get("/pro")
+@require_subscription(SubscriptionLevel.PRO)
+async def pro_page(current_user: UserResponse = Depends(get_current_user)):
+    """Pro plan page - requires Pro or Premium subscription"""
+    return {"message": "pro page"}
+
+@router.get("/premium")
+@require_subscription(SubscriptionLevel.PREMIUM)
+async def premium_page(current_user: UserResponse = Depends(get_current_user)):
+    """Premium plan page - requires Premium subscription"""
+    return {"message": "premium page"}
 
 @router.post("/create-checkout-session", 
     response_model=CheckoutSessionResponse,
@@ -27,10 +45,9 @@ async def create_checkout_session(
     """
     Create a Stripe checkout session for subscription.
     
-    Requires:
-    - price_id: Stripe Price ID for the subscription plan
-    
-    Returns a checkout URL that the user can be redirected to for payment.
+    Use your Stripe Price IDs:
+    - Pro Plan ($19/month): "price_your_pro_price_id"
+    - Premium Plan ($49/month): "price_your_premium_price_id"
     """
     try:
         session_data = await stripe_service.create_checkout_session(
@@ -54,15 +71,7 @@ async def stripe_webhook(
     request: Request,
     stripe_signature: Optional[str] = Header(None, alias="stripe-signature")
 ):
-    """
-    Handle Stripe webhook events for subscription updates.
-    
-    This endpoint processes:
-    - checkout.session.completed: When a customer completes payment
-    - invoice.payment_succeeded: When recurring payments succeed
-    - customer.subscription.updated: When subscription details change
-    - customer.subscription.deleted: When subscription is canceled
-    """
+    """Handle Stripe webhook events for subscription updates."""
     if not stripe_signature:
         raise HTTPException(status_code=400, detail="Missing Stripe signature")
     
@@ -86,25 +95,13 @@ async def stripe_webhook(
 
 @router.get("/me",
     response_model=UserSubscriptionResponse,
-    description="Get current user's subscription information",
-    responses={
-        200: {"description": "User subscription details"},
-        401: {"description": "Not authenticated"}
-    })
+    description="Get current user's subscription information"
+)
 async def get_my_subscription(
     current_user: UserResponse = Depends(get_current_user),
     stripe_service: StripeService = Depends(get_stripe_service)
 ) -> UserSubscriptionResponse:
-    """
-    Get the current user's subscription plan and status.
-    
-    Returns:
-    - subscription_plan: "free", "pro", or "premium"
-    - subscription_status: Stripe subscription status
-    - stripe_customer_id: Stripe customer ID
-    - created_at: Account creation date
-    - last_login: Last login date
-    """
+    """Get the current user's subscription plan and status."""
     try:
         subscription_info = await stripe_service.get_user_subscription_status(current_user.id)
         
