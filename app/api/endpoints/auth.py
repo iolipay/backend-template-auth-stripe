@@ -1,4 +1,4 @@
-from app.core.exceptions import IncorrectPasswordError, InvalidTokenError, UserNotFoundError
+from app.core.exceptions import IncorrectPasswordError, InvalidTokenError, UserNotFoundError, WeakPasswordError
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from app.services.auth import AuthService
@@ -6,7 +6,7 @@ from app.schemas.user import UserCreate, UserResponse
 from app.core.security import create_access_token
 from app.api.deps import get_auth_service, get_current_user
 from app.schemas.user import PasswordChange
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(tags=["Authentication"])
 
@@ -24,12 +24,17 @@ async def register(
     Register a new user with the following information:
     - email: Valid email address
     - password: Minimum 8 characters
-    - first_name: User's first name
-    - last_name: User's last name
 
     Returns the created user information and sends a verification email.
     """
-    return await auth_service.create_user_with_verification(user_data)
+    try:
+        user = await auth_service.create_user_with_verification(user_data)
+        return UserResponse(**user)
+    except WeakPasswordError:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters long and contain at least one number and one letter"
+        )
 
 @router.post("/login",
     description="Authenticate user and return access token",
@@ -93,6 +98,11 @@ async def change_password(
             status_code=400,
             detail=str(e)
         )
+    except WeakPasswordError:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters long and contain at least one number and one letter"
+        )
 
 @router.get("/verify/{token}",
     description="Verify user's email address",
@@ -135,7 +145,7 @@ async def resend_verification(
     try:
         last_sent = await auth_service.get_last_verification_sent(email)
         if last_sent:
-            time_diff = datetime.utcnow() - last_sent
+            time_diff = datetime.now(timezone.utc) - last_sent
             if time_diff < timedelta(minutes=2):
                 raise HTTPException(
                     status_code=429,
@@ -198,4 +208,9 @@ async def reset_password(
         raise HTTPException(
             status_code=400,
             detail="Invalid or expired reset token"
+        )
+    except WeakPasswordError:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters long and contain at least one number and one letter"
         )

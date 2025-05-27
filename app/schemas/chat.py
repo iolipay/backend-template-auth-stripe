@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 class MessageRole(str, Enum):
@@ -13,11 +13,11 @@ class MessageCreate(BaseModel):
     content: str
 
 class MessageResponse(MessageCreate):
-    created_at: datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ChatCreate(BaseModel):
     title: Optional[str] = None
-    messages: List[MessageCreate] = []
+    messages: List[MessageCreate] = Field(default_factory=list)
 
 class ChatUpdate(BaseModel):
     title: Optional[str] = None
@@ -26,7 +26,7 @@ class ChatResponse(BaseModel):
     id: str
     user_id: str
     title: Optional[str] = None
-    messages: List[MessageResponse] = []
+    messages: List[MessageResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

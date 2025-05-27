@@ -1,11 +1,11 @@
-from datetime import datetime, timedelta
-from http.client import HTTPException
+from datetime import datetime, timedelta, timezone
+from fastapi import HTTPException
 import re
 from typing import Any, Dict
 from bson import ObjectId
 from jose import JWTError, jwt
-from app.core.security import create_access_token, get_password_hash, verify_password
-from app.core.exceptions import InvalidCredentialsError, InvalidEmailError, UserExistsError, InvalidTokenError, UserNotFoundError, IncorrectPasswordError
+from app.core.security import create_access_token, get_password_hash, verify_password, validate_password
+from app.core.exceptions import InvalidCredentialsError, InvalidEmailError, UserExistsError, InvalidTokenError, UserNotFoundError, IncorrectPasswordError, WeakPasswordError
 from app.services.email import EmailService
 from app.core.config import settings
 import asyncio
@@ -20,6 +20,10 @@ class AuthService:
         if await self.db.users.find_one({"email": user_create.email}):
             raise UserExistsError()
 
+        # Validate password strength
+        if not validate_password(user_create.password):
+            raise WeakPasswordError()
+
         # Create verification token
         verification_token = create_access_token(
             data={"email": user_create.email},
@@ -27,8 +31,8 @@ class AuthService:
         )
 
         # Create user
-        user_dict = user_create.dict()
-        current_time = datetime.utcnow()
+        user_dict = user_create.model_dump()
+        current_time = datetime.now(timezone.utc)
         user_dict.update({
             "hashed_password": get_password_hash(user_dict.pop("password")),
             "verification_token": verification_token,
@@ -104,7 +108,7 @@ class AuthService:
             {
                 "$set": {
                     "is_verified": True,
-                    "verified_at": datetime.utcnow(),
+                    "verified_at": datetime.now(timezone.utc),
                     "verification_token": None
                 }
             }
@@ -144,7 +148,7 @@ class AuthService:
             {
                 "$set": {
                     "verification_token": verification_token,
-                    "verification_sent_at": datetime.utcnow()
+                    "verification_sent_at": datetime.now(timezone.utc)
                 }
             }
         )
@@ -157,7 +161,7 @@ class AuthService:
         # Update last verification sent time
         await self.db.users.update_one(
             {"email": email},
-            {"$set": {"last_verification_sent": datetime.utcnow()}}
+            {"$set": {"last_verification_sent": datetime.now(timezone.utc)}}
         )
 
         return {"message": "Verification email sent"}
@@ -180,7 +184,7 @@ class AuthService:
             {
                 "$set": {
                     "reset_token": reset_token,
-                    "reset_token_expires": datetime.utcnow() + timedelta(hours=1)
+                    "reset_token_expires": datetime.now(timezone.utc) + timedelta(hours=1)
                 }
             }
         )
@@ -192,6 +196,10 @@ class AuthService:
 
     async def reset_password(self, token: str, new_password: str):
         """Reset user password using reset token"""
+        # Validate new password strength
+        if not validate_password(new_password):
+            raise WeakPasswordError()
+            
         try:
             # Verify token
             payload = jwt.decode(
@@ -209,7 +217,7 @@ class AuthService:
             user = await self.db.users.find_one({
                 "email": email,
                 "reset_token": token,
-                "reset_token_expires": {"$gt": datetime.utcnow()}
+                "reset_token_expires": {"$gt": datetime.now(timezone.utc)}
             })
 
             if not user:
@@ -256,6 +264,10 @@ class AuthService:
             
         if not verify_password(current_password, user["hashed_password"]):
             raise IncorrectPasswordError("Current password is incorrect")
+        
+        # Validate new password strength
+        if not validate_password(new_password):
+            raise WeakPasswordError()
         
         # Check if new password is same as current password
         if verify_password(new_password, user["hashed_password"]):

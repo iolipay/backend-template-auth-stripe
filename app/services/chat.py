@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, AsyncGenerator
 import asyncio
 from bson import ObjectId
@@ -11,8 +11,8 @@ class ChatService:
 
     async def create_chat(self, user_id: str, chat_data: ChatCreate) -> dict:
         """Create a new chat"""
-        current_time = datetime.utcnow()
-        chat_dict = chat_data.dict()
+        current_time = datetime.now(timezone.utc)
+        chat_dict = chat_data.model_dump()
         chat_dict.update({
             "user_id": user_id,
             "created_at": current_time,
@@ -35,8 +35,8 @@ class ChatService:
         """Update chat details"""
         update_data = {
             "$set": {
-                **chat_data.dict(exclude_unset=True),
-                "updated_at": datetime.utcnow()
+                **chat_data.model_dump(exclude_unset=True),
+                "updated_at": datetime.now(timezone.utc)
             }
         }
         
@@ -74,14 +74,14 @@ class ChatService:
 
     async def add_message(self, chat_id: str, user_id: str, message: MessageCreate) -> Optional[dict]:
         """Add a message to a chat"""
-        message_dict = message.dict()
-        message_dict["created_at"] = datetime.utcnow()
+        message_dict = message.model_dump()
+        message_dict["created_at"] = datetime.now(timezone.utc)
         
         result = await self.db.chats.update_one(
             {"_id": ObjectId(chat_id), "user_id": user_id},
             {
                 "$push": {"messages": message_dict},
-                "$set": {"updated_at": datetime.utcnow()}
+                "$set": {"updated_at": datetime.now(timezone.utc)}
             }
         )
         
