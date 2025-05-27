@@ -398,4 +398,104 @@ class StripeService:
             raise
         except Exception as e:
             logger.error(f"Error creating billing portal session: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error")
+
+    async def cancel_user_subscription(self, user_email: str) -> Dict[str, Any]:
+        """Cancel a user's active subscription"""
+        try:
+            logger.info(f"Attempting to cancel subscription for user: {user_email}")
+            
+            # Get user's Stripe customer ID
+            user = await self.db.users.find_one({"email": user_email})
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            if not user.get("stripe_customer_id"):
+                raise HTTPException(
+                    status_code=400, 
+                    detail="No Stripe customer found. User has no subscription to cancel."
+                )
+            
+            customer_id = user["stripe_customer_id"]
+            logger.info(f"Found customer ID: {customer_id}")
+            
+            # Get active subscriptions
+            active_subscriptions = stripe.Subscription.list(
+                customer=customer_id,
+                status="active",
+                limit=10
+            )
+            
+            if not active_subscriptions.data:
+                # Check if user already has free plan in database
+                if user.get("subscription_plan") == "free":
+                    return {
+                        "message": "No active subscription found. User is already on free plan.",
+                        "subscription_plan": "free"
+                    }
+                else:
+                    # Update database to reflect reality
+                    await self.db.users.update_one(
+                        {"email": user_email},
+                        {
+                            "$set": {
+                                "subscription_plan": "free",
+                                "subscription_status": None,
+                                "subscription_end_date": None
+                            }
+                        }
+                    )
+                    return {
+                        "message": "No active subscription found. Plan updated to free.",
+                        "subscription_plan": "free"
+                    }
+            
+            # Cancel all active subscriptions (should only be one, but just in case)
+            canceled_subscriptions = []
+            for subscription in active_subscriptions.data:
+                try:
+                    logger.info(f"Canceling subscription: {subscription.id}")
+                    
+                    # Cancel the subscription immediately
+                    canceled_subscription = stripe.Subscription.delete(subscription.id)
+                    canceled_subscriptions.append(canceled_subscription.id)
+                    
+                    logger.info(f"Successfully canceled subscription: {subscription.id}")
+                    
+                except stripe.error.StripeError as e:
+                    logger.error(f"Error canceling subscription {subscription.id}: {e}")
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Failed to cancel subscription: {str(e)}"
+                    )
+            
+            # Update user's plan in database
+            await self.db.users.update_one(
+                {"email": user_email},
+                {
+                    "$set": {
+                        "subscription_plan": "free",
+                        "subscription_status": "canceled",
+                        "subscription_end_date": None
+                    }
+                }
+            )
+            
+            logger.info(f"Updated user {user_email} to free plan after cancellation")
+            
+            return {
+                "message": "Subscription cancelled and plan downgraded to free.",
+                "subscription_plan": "free",
+                "canceled_subscriptions": canceled_subscriptions
+            }
+            
+        except HTTPException:
+            raise
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error canceling subscription: {e}")
+            raise HTTPException(status_code=400, detail=f"Stripe error: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error canceling subscription: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail="Internal server error") 

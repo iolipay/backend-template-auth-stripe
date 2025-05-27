@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class CheckoutSessionCreate(BaseModel):
@@ -16,6 +16,11 @@ class CheckoutSessionResponse(BaseModel):
 
 class BillingPortalResponse(BaseModel):
     portal_url: str
+
+class SubscriptionCancelResponse(BaseModel):
+    message: str
+    subscription_plan: str
+    canceled_subscriptions: Optional[List[str]] = None
 
 class UserSubscriptionResponse(BaseModel):
     email: str

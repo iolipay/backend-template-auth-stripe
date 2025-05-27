@@ -12,6 +12,8 @@
 
 - `POST /subscription/create-checkout-session` - **Enhanced with multiple subscription prevention**
 - `POST /subscription/billing-portal` - **NEW**: Stripe customer portal for self-service
+- `GET /subscription/manage-portal` - **NEW**: Get portal URL for frontend redirect
+- `POST /subscription/cancel` - **NEW**: Cancel active subscription directly
 - `POST /webhook` - Direct webhook endpoint for Stripe
 - `GET /subscription/me` - Check user's current plan
 
@@ -70,6 +72,23 @@ curl -X POST "http://localhost:8000/subscription/create-checkout-session" \
 
 Allow users to manage their subscriptions through Stripe's native interface:
 
+#### Option A: GET Portal URL (for frontend redirect)
+
+```bash
+curl -H "Authorization: Bearer <jwt_token>" \
+  "http://localhost:8000/subscription/manage-portal"
+```
+
+**Response:**
+
+```json
+{
+  "url": "https://billing.stripe.com/session/bps_1234567890..."
+}
+```
+
+#### Option B: POST Portal Session (returns full object)
+
 ```bash
 curl -X POST "http://localhost:8000/subscription/billing-portal" \
   -H "Authorization: Bearer <jwt_token>"
@@ -79,17 +98,28 @@ curl -X POST "http://localhost:8000/subscription/billing-portal" \
 
 ```json
 {
-  "portal_url": "https://billing.stripe.com/session/..."
+  "portal_url": "https://billing.stripe.com/session/bps_1234567890..."
 }
 ```
 
-**Features available in billing portal:**
+### 3. Direct Subscription Cancellation
 
-- ✅ Update payment methods
-- ✅ View billing history & invoices
-- ✅ Cancel subscriptions
-- ✅ Download receipts
-- ✅ Pause/resume subscriptions (if configured)
+Cancel subscription directly through your backend:
+
+```bash
+curl -X POST "http://localhost:8000/subscription/cancel" \
+  -H "Authorization: Bearer <jwt_token>"
+```
+
+**Response:**
+
+```json
+{
+  "message": "Subscription cancelled and plan downgraded to free.",
+  "subscription_plan": "free",
+  "canceled_subscriptions": ["sub_1234567890"]
+}
+```
 
 ## 📋 Complete Setup Guide
 
@@ -180,13 +210,35 @@ curl -X POST "http://localhost:8000/subscription/create-checkout-session" \
 ### Scenario 4: User Manages Subscription via Billing Portal
 
 ```bash
-# 1. Create billing portal session
+# Option A: Get portal URL for frontend redirect
+curl -H "Authorization: Bearer <jwt>" \
+  "http://localhost:8000/subscription/manage-portal"
+
+# Frontend redirects user to the returned URL
+# User can cancel, update payment methods, etc.
+# Changes are automatically synced via webhooks
+
+# Option B: Get portal session object
 curl -X POST "http://localhost:8000/subscription/billing-portal" \
   -H "Authorization: Bearer <jwt>"
+```
 
-# 2. Redirect user to the portal_url
-# 3. User can cancel, update payment methods, etc.
-# 4. Changes are automatically synced via webhooks
+### Scenario 5: Direct Subscription Cancellation
+
+```bash
+# 1. Check current subscription
+curl -H "Authorization: Bearer <jwt>" "http://localhost:8000/subscription/me"
+
+# 2. Cancel subscription directly
+curl -X POST "http://localhost:8000/subscription/cancel" \
+  -H "Authorization: Bearer <jwt>"
+
+# 3. Verify cancellation
+curl -H "Authorization: Bearer <jwt>" "http://localhost:8000/subscription/me"
+# Should show subscription_plan: "free"
+
+# 4. Try accessing pro page (should get 403)
+curl -H "Authorization: Bearer <jwt>" "http://localhost:8000/subscription/pro"
 ```
 
 ## 🎯 API Response Examples

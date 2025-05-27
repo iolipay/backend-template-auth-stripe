@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import Optional
 from app.api.deps import get_current_user, get_stripe_service
 from app.schemas.user import UserResponse
-from app.schemas.subscription import CheckoutSessionCreate, CheckoutSessionResponse, UserSubscriptionResponse, BillingPortalResponse
+from app.schemas.subscription import CheckoutSessionCreate, CheckoutSessionResponse, UserSubscriptionResponse, BillingPortalResponse, SubscriptionCancelResponse
 from app.services.stripe import StripeService
 from app.core.subscription import require_subscription, SubscriptionLevel
 import logging
@@ -167,4 +167,70 @@ async def create_billing_portal(
         raise
     except Exception as e:
         logger.error(f"Error creating billing portal: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/manage-portal",
+    description="Get Stripe customer portal URL for subscription management",
+    responses={
+        200: {"description": "Portal URL retrieved successfully"},
+        400: {"description": "No Stripe customer found"},
+        401: {"description": "Not authenticated"}
+    })
+async def get_manage_portal(
+    current_user: UserResponse = Depends(get_current_user),
+    stripe_service: StripeService = Depends(get_stripe_service)
+):
+    """
+    Get Stripe customer portal URL for subscription management.
+    
+    Returns a URL that the frontend can redirect to, allowing users to:
+    - Update payment methods
+    - View billing history
+    - Cancel subscriptions
+    - Download invoices
+    - Manage subscription settings
+    
+    Requires the user to have an existing Stripe customer (i.e., have created at least one subscription).
+    """
+    try:
+        portal_data = await stripe_service.create_billing_portal_session(current_user.email)
+        return {"url": portal_data["portal_url"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting manage portal: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/cancel",
+    response_model=SubscriptionCancelResponse,
+    description="Cancel the user's active subscription",
+    responses={
+        200: {"description": "Subscription canceled successfully"},
+        400: {"description": "No active subscription found or Stripe error"},
+        401: {"description": "Not authenticated"},
+        404: {"description": "User not found"}
+    })
+async def cancel_subscription(
+    current_user: UserResponse = Depends(get_current_user),
+    stripe_service: StripeService = Depends(get_stripe_service)
+) -> SubscriptionCancelResponse:
+    """
+    Cancel the current user's active subscription.
+    
+    This will:
+    - Find the user's active subscription in Stripe
+    - Cancel it immediately (not at period end)
+    - Update the user's plan to "free" in the database
+    - Return confirmation of the cancellation
+    
+    If the user has no active subscription, it will return an appropriate message
+    and ensure their database plan is set to "free".
+    """
+    try:
+        result = await stripe_service.cancel_user_subscription(current_user.email)
+        return SubscriptionCancelResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error canceling subscription: {e}")
         raise HTTPException(status_code=500, detail="Internal server error") 
