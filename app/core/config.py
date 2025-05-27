@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     
     # Stripe Settings
     STRIPE_SECRET_KEY: Optional[str] = None
+    STRIPE_PUBLIC_KEY: Optional[str] = None
     STRIPE_WEBHOOK_SECRET: Optional[str] = None
     
     # CORS Settings

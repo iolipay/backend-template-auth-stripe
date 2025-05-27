@@ -18,10 +18,14 @@ class UserInDB(UserBase):
     verification_token: Optional[str] = None
     verification_sent_at: Optional[datetime] = None
     verified_at: Optional[datetime] = None
+    stripe_customer_id: Optional[str] = None
+    subscription_plan: str = "free"  # "free", "pro", "premium"
     subscription_status: Optional[str] = None
     subscription_end_date: Optional[datetime] = None
+    last_login: Optional[datetime] = None
 
 class User(UserBase):
     id: str
     created_at: datetime
+    subscription_plan: str = "free"
     subscription_status: Optional[str] = None 

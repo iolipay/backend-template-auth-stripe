@@ -38,7 +38,10 @@ class AuthService:
             "verification_token": verification_token,
             "verification_sent_at": current_time,
             "created_at": current_time,
-            "is_verified": False
+            "is_verified": False,
+            "subscription_plan": "free",
+            "subscription_status": None,
+            "stripe_customer_id": None
         })
 
         result = await self.db.users.insert_one(user_dict)
