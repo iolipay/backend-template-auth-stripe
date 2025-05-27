@@ -6,6 +6,7 @@ from app.api.deps import get_current_user, get_chat_service
 from app.schemas.user import UserResponse
 from app.schemas.chat import ChatCreate, ChatUpdate, ChatResponse, ChatListResponse, StreamRequest
 from app.services.chat import ChatService
+from app.core.subscription import require_subscription, require_feature, SubscriptionLevel, check_feature_access
 
 router = APIRouter(tags=["Chat"])
 
@@ -115,7 +116,8 @@ async def delete_chat(
     description="Stream a chat response",
     responses={
         200: {"description": "Streaming response"},
-        401: {"description": "Not authenticated"}
+        401: {"description": "Not authenticated"},
+        403: {"description": "Feature requires subscription upgrade"}
     })
 async def stream_chat(
     request: StreamRequest,
@@ -126,7 +128,12 @@ async def stream_chat(
     Stream a chat response for the given message.
     If chat_id is provided, adds to an existing chat, otherwise creates a new one.
     Returns a streaming response with chunks of text as they're generated.
+    
+    Basic chat is available to all users, but advanced features require Pro+.
     """
+    # Check if user has access to basic chat (available to all)
+    check_feature_access(current_user, SubscriptionLevel.FREE, "basic chat")
+    
     async def event_generator():
         async for chunk in chat_service.stream_chat_response(
             request.message, 
@@ -134,6 +141,50 @@ async def stream_chat(
             current_user.id
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream"
+    )
+
+@router.post("/stream/advanced",
+    description="Stream advanced chat response with enhanced features",
+    responses={
+        200: {"description": "Advanced streaming response"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Requires Pro or Premium subscription"}
+    })
+@require_feature("advanced_chat")
+async def stream_advanced_chat(
+    request: StreamRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    chat_service: ChatService = Depends(get_chat_service)
+):
+    """
+    Stream an advanced chat response with enhanced features.
+    
+    This endpoint demonstrates premium features available only to Pro and Premium subscribers.
+    Features might include:
+    - Longer context windows
+    - Advanced AI models
+    - Custom system prompts
+    - Enhanced response quality
+    """
+    async def event_generator():
+        # In a real implementation, this might use a more advanced model
+        # or provide enhanced features based on subscription level
+        async for chunk in chat_service.stream_chat_response(
+            f"[ADVANCED] {request.message}",  # Prefix to show this is advanced
+            request.chat_id, 
+            current_user.id
+        ):
+            # Add subscription level to response
+            enhanced_chunk = {
+                **chunk,
+                "subscription_level": current_user.subscription_plan,
+                "is_premium_response": True
+            }
+            yield f"data: {json.dumps(enhanced_chunk)}\n\n"
 
     return StreamingResponse(
         event_generator(),

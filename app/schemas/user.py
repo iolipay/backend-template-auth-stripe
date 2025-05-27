@@ -17,6 +17,8 @@ class UserResponse(UserBase):
     id: str
     created_at: datetime
     is_verified: bool = False
+    subscription_plan: str = "free"
+    subscription_status: Optional[str] = None
 
 
 class PasswordChange(BaseModel):

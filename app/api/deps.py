@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.core.exceptions import AuthenticationError
 from app.services.auth import AuthService
 from app.services.chat import ChatService
+from app.services.stripe import StripeService
 from app.schemas.user import UserResponse
 from bson import ObjectId
 
@@ -17,6 +18,10 @@ def get_auth_service() -> AuthService:
 def get_chat_service() -> ChatService:
     from app.main import app  # Local import to avoid circular dependency
     return ChatService(app.mongodb)
+
+def get_stripe_service() -> StripeService:
+    from app.main import app  # Local import to avoid circular dependency
+    return StripeService(app.mongodb)
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
