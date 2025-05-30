@@ -9,6 +9,9 @@ from app.core.exceptions import InvalidCredentialsError, InvalidEmailError, User
 from app.services.email import EmailService
 from app.core.config import settings
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AuthService:
     def __init__(self, db):
@@ -47,13 +50,17 @@ class AuthService:
         result = await self.db.users.insert_one(user_dict)
         user_dict["id"] = str(result.inserted_id)
 
-        # Send verification email in background
-        asyncio.create_task(
-            self.email_service.send_verification_email(
+        # Send verification email - handle errors properly
+        try:
+            await self.email_service.send_verification_email(
                 user_create.email,
                 verification_token
             )
-        )
+            logger.info(f"Verification email sent to {user_create.email}")
+        except Exception as e:
+            logger.error(f"Failed to send verification email to {user_create.email}: {str(e)}")
+            # Don't fail user creation if email fails, but log the error
+            # User can request resend later
 
         return user_dict
     
@@ -118,7 +125,11 @@ class AuthService:
         )
 
         # Send success email
-        await self.email_service.send_verification_success(email)
+        try:
+            await self.email_service.send_verification_success(email)
+        except Exception as e:
+            logger.error(f"Failed to send verification success email: {str(e)}")
+            # Don't fail verification if success email fails
 
         return True
 
@@ -156,10 +167,16 @@ class AuthService:
             }
         )
 
-        # Send verification email asynchronously
-        asyncio.create_task(
-            self.email_service.send_verification_email(email, verification_token)
-        )
+        # Send verification email - handle errors properly
+        try:
+            await self.email_service.send_verification_email(email, verification_token)
+            logger.info(f"Verification email resent to {email}")
+        except Exception as e:
+            logger.error(f"Failed to resend verification email to {email}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to send verification email. Please try again later."
+            )
 
         # Update last verification sent time
         await self.db.users.update_one(
@@ -192,10 +209,16 @@ class AuthService:
             }
         )
 
-        # Send reset email asynchronously
-        asyncio.create_task(
-            self.email_service.send_password_reset_email(email, reset_token)
-        )
+        # Send reset email - handle errors properly
+        try:
+            await self.email_service.send_password_reset_email(email, reset_token)
+            logger.info(f"Password reset email sent to {email}")
+        except Exception as e:
+            logger.error(f"Failed to send password reset email to {email}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to send password reset email. Please try again later."
+            )
 
     async def reset_password(self, token: str, new_password: str):
         """Reset user password using reset token"""
@@ -240,9 +263,11 @@ class AuthService:
             )
 
             # Send password changed confirmation email
-            asyncio.create_task(
-                self.email_service.send_password_changed_email(email)
-            )
+            try:
+                await self.email_service.send_password_changed_email(email)
+            except Exception as e:
+                logger.error(f"Failed to send password changed email: {str(e)}")
+                # Don't fail password reset if confirmation email fails
 
         except JWTError:
             raise InvalidTokenError()

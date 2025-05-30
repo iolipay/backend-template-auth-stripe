@@ -7,6 +7,7 @@ from app.core.security import create_access_token
 from app.api.deps import get_auth_service, get_current_user
 from app.schemas.user import PasswordChange
 from datetime import datetime, timedelta, timezone
+from app.services.email import EmailService
 
 router = APIRouter(tags=["Authentication"])
 
@@ -145,7 +146,13 @@ async def resend_verification(
     try:
         last_sent = await auth_service.get_last_verification_sent(email)
         if last_sent:
-            time_diff = datetime.now(timezone.utc) - last_sent
+            # Ensure both datetimes are timezone-aware
+            current_time = datetime.now(timezone.utc)
+            if last_sent.tzinfo is None:
+                # If last_sent is naive, assume it's UTC
+                last_sent = last_sent.replace(tzinfo=timezone.utc)
+            
+            time_diff = current_time - last_sent
             if time_diff < timedelta(minutes=2):
                 raise HTTPException(
                     status_code=429,
@@ -161,6 +168,80 @@ async def resend_verification(
         )
     except HTTPException as e:
         raise e
+
+@router.post("/test-email",
+    description="Test email configuration (for debugging)",
+    responses={
+        200: {"description": "Email test completed"},
+        500: {"description": "Email configuration error"}
+    })
+async def test_email():
+    """
+    Test email configuration to verify if emails can be sent.
+    This endpoint helps debug email delivery issues.
+    """
+    email_service = EmailService()
+    try:
+        success = await email_service.test_email_connection()
+        if success:
+            return {"detail": "Email configuration test passed - emails should be working"}
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Email configuration test failed - check server logs for details"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Email test failed: {str(e)}"
+        )
+
+@router.post("/test-alternative-email",
+    description="Test alternative email configuration with Gmail",
+    responses={
+        200: {"description": "Alternative email test completed"},
+        500: {"description": "Email configuration error"}
+    })
+async def test_alternative_email():
+    """
+    Test with Gmail SMTP as an alternative to debug email issues.
+    This uses Gmail's SMTP server to verify if the issue is with PrivateEmail.
+    """
+    try:
+        from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+        from app.core.config import settings
+        
+        # Alternative configuration using Gmail SMTP
+        gmail_conf = ConnectionConfig(
+            MAIL_USERNAME="your-gmail@gmail.com",  # Replace with your Gmail
+            MAIL_PASSWORD="your-app-password",     # Replace with Gmail app password
+            MAIL_FROM="your-gmail@gmail.com",      # Replace with your Gmail
+            MAIL_PORT=587,
+            MAIL_SERVER="smtp.gmail.com",
+            MAIL_FROM_NAME="Test Sender",
+            MAIL_STARTTLS=True,
+            MAIL_SSL_TLS=False,
+            USE_CREDENTIALS=True,
+            VALIDATE_CERTS=True
+        )
+        
+        fastmail = FastMail(gmail_conf)
+        
+        message = MessageSchema(
+            subject="Alternative Email Test",
+            recipients=[settings.MAIL_FROM],
+            body="<p>This is a test using Gmail SMTP to verify email functionality.</p>",
+            subtype="html"
+        )
+        
+        await fastmail.send_message(message)
+        return {"detail": "Alternative email test passed - Gmail SMTP is working"}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Alternative email test failed: {str(e)}"
+        )
 
 @router.post("/forgot-password",
     description="Request password reset email",

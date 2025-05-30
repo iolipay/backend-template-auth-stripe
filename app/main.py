@@ -27,6 +27,11 @@ app.include_router(users.router, prefix="/users")
 app.include_router(chat.router, prefix="/chat")
 app.include_router(subscription.router, prefix="/subscription")
 
+
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+
 # Direct webhook endpoint for Stripe (since Stripe calls /webhook)
 @app.post("/webhook")
 async def stripe_webhook_direct(
