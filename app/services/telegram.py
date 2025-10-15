@@ -329,6 +329,94 @@ class TelegramService:
             f"You can manage your notification preferences in the app settings."
         )
 
+    def format_tax_declaration_reminder(
+        self,
+        month_name: str,
+        income_gel: float,
+        tax_gel: float,
+        days_until: int
+    ) -> str:
+        """Format tax declaration reminder"""
+        urgency_emoji = "🚨" if days_until <= 1 else "⚠️" if days_until <= 3 else "📋"
+        urgency_text = "DUE TOMORROW!" if days_until <= 1 else f"Due in {days_until} days"
+
+        return (
+            f"{urgency_emoji} <b>Tax Declaration {urgency_text}</b>\n\n"
+            f"📅 Period: <b>{month_name}</b>\n\n"
+            f"💰 Income: {income_gel:,.2f} GEL\n"
+            f"💵 Tax Due (1%): <b>{tax_gel:,.2f} GEL</b>\n\n"
+            f"Submit your declaration at rs.ge before the deadline! 🏛️"
+        )
+
+    def format_monthly_tax_summary(
+        self,
+        month_name: str,
+        income_gel: float,
+        tax_gel: float,
+        transaction_count: int,
+        deadline: str,
+        ytd_income: float,
+        ytd_tax: float,
+        threshold_percentage: float
+    ) -> str:
+        """Format monthly tax summary (sent at start of month)"""
+        return (
+            f"📊 <b>{month_name} Tax Summary</b>\n\n"
+            f"💰 Income: {income_gel:,.2f} GEL\n"
+            f"💵 Tax Due (1%): <b>{tax_gel:,.2f} GEL</b>\n"
+            f"📝 Transactions: {transaction_count}\n\n"
+            f"⏰ Deadline: <b>{deadline}</b>\n\n"
+            f"📈 Year Progress:\n"
+            f"├─ Total: {ytd_income:,.2f} GEL\n"
+            f"├─ Tax: {ytd_tax:,.2f} GEL\n"
+            f"└─ Threshold: {threshold_percentage:.1f}% used\n\n"
+            f"Ready to file? Your declaration is prepared! 📋"
+        )
+
+    def format_threshold_warning(
+        self,
+        threshold_percentage: float,
+        remaining_gel: float,
+        severity: str
+    ) -> str:
+        """Format threshold warning"""
+        if severity == "critical":
+            emoji = "🚨"
+            title = "THRESHOLD LIMIT REACHED"
+        elif severity == "high":
+            emoji = "⚠️"
+            title = "Approaching Threshold"
+        else:
+            emoji = "ℹ️"
+            title = "Threshold Update"
+
+        return (
+            f"{emoji} <b>{title}</b>\n\n"
+            f"You've used <b>{threshold_percentage:.1f}%</b> of your 500k annual limit.\n\n"
+            f"Remaining capacity: <b>{remaining_gel:,.0f} GEL</b>\n\n"
+            f"Plan your income carefully for the rest of the year. 📊"
+        )
+
+    def format_tax_insight(
+        self,
+        title: str,
+        message: str,
+        severity: str
+    ) -> str:
+        """Format tax insight notification"""
+        emoji_map = {
+            "critical": "🚨",
+            "high": "⚠️",
+            "medium": "ℹ️",
+            "info": "💡"
+        }
+        emoji = emoji_map.get(severity, "ℹ️")
+
+        return (
+            f"{emoji} <b>{title}</b>\n\n"
+            f"{message}"
+        )
+
     async def send_reminder(
         self,
         chat_id: int,
@@ -380,6 +468,36 @@ class TelegramService:
             )
         elif reminder_type == "welcome":
             text = self.format_welcome_message()
+        elif reminder_type == "tax_declaration":
+            text = self.format_tax_declaration_reminder(
+                data.get("month_name", ""),
+                data.get("income_gel", 0),
+                data.get("tax_gel", 0),
+                data.get("days_until", 0)
+            )
+        elif reminder_type == "monthly_tax_summary":
+            text = self.format_monthly_tax_summary(
+                data.get("month_name", ""),
+                data.get("income_gel", 0),
+                data.get("tax_gel", 0),
+                data.get("transaction_count", 0),
+                data.get("deadline", ""),
+                data.get("ytd_income", 0),
+                data.get("ytd_tax", 0),
+                data.get("threshold_percentage", 0)
+            )
+        elif reminder_type == "threshold_warning":
+            text = self.format_threshold_warning(
+                data.get("threshold_percentage", 0),
+                data.get("remaining_gel", 0),
+                data.get("severity", "info")
+            )
+        elif reminder_type == "tax_insight":
+            text = self.format_tax_insight(
+                data.get("title", ""),
+                data.get("message", ""),
+                data.get("severity", "info")
+            )
         else:
             logger.error(f"Unknown reminder type: {reminder_type}")
             return False

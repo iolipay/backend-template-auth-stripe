@@ -40,6 +40,9 @@ class ReminderScheduler:
         self._register_monthly_report()
         self._register_subscription_checks()
         self._register_inactivity_checks()
+        self._register_tax_reminders()
+        self._register_monthly_tax_summary()
+        self._register_threshold_checks()
 
         # Start scheduler
         self.scheduler.start()
@@ -399,3 +402,207 @@ class ReminderScheduler:
             reminder_type=reminder_type,
             data=test_data
         )
+
+    # ========== Tax Reminder Jobs ==========
+
+    def _register_tax_reminders(self):
+        """Register tax declaration reminder check (daily at 9 AM)"""
+        self.scheduler.add_job(
+            self.check_tax_declaration_deadlines,
+            trigger=CronTrigger(hour=9, minute=0),
+            id="tax_declaration_reminders",
+            name="Check tax declaration deadlines",
+            replace_existing=True
+        )
+        logger.info("Registered tax declaration reminder job")
+
+    def _register_monthly_tax_summary(self):
+        """Register monthly tax summary (1st of month, 9 AM)"""
+        self.scheduler.add_job(
+            self.send_monthly_tax_summaries,
+            trigger=CronTrigger(day=1, hour=9, minute=0),
+            id="monthly_tax_summaries",
+            name="Send monthly tax summaries",
+            replace_existing=True
+        )
+        logger.info("Registered monthly tax summary job")
+
+    def _register_threshold_checks(self):
+        """Register threshold warning checks (weekly, Monday 10 AM)"""
+        self.scheduler.add_job(
+            self.check_threshold_warnings,
+            trigger=CronTrigger(day_of_week="mon", hour=10, minute=0),
+            id="threshold_checks",
+            name="Check threshold warnings",
+            replace_existing=True
+        )
+        logger.info("Registered threshold warning check job")
+
+    async def check_tax_declaration_deadlines(self):
+        """Check for upcoming tax declaration deadlines and send reminders"""
+        try:
+            from app.services.tax_stats import TaxStatsService
+
+            # Get all users with Telegram connected
+            users = await self.db.users.find({
+                "telegram_chat_id": {"$ne": None},
+                "telegram_notifications_enabled": True,
+            }).to_list(length=None)
+
+            current_date = datetime.now(timezone.utc)
+            sent_count = 0
+
+            for user in users:
+                user_id = str(user["_id"])
+                tax_service = TaxStatsService(self.db)
+
+                # Get pending declarations
+                pending_declarations = await self.db.tax_declarations.find({
+                    "user_id": user_id,
+                    "status": {"$in": ["pending", "overdue"]},
+                    "filing_deadline": {"$gte": current_date}
+                }).sort("filing_deadline", 1).to_list(length=None)
+
+                for decl in pending_declarations:
+                    days_until = (decl["filing_deadline"] - current_date).days
+
+                    # Send reminders at 7, 3, and 1 day before deadline
+                    if days_until in [7, 3, 1]:
+                        month_name = datetime(decl["year"], decl["month"], 1).strftime("%B %Y")
+
+                        success = await self.telegram_service.send_reminder(
+                            chat_id=user["telegram_chat_id"],
+                            reminder_type="tax_declaration",
+                            data={
+                                "month_name": month_name,
+                                "income_gel": decl.get("income_gel", 0),
+                                "tax_gel": decl.get("tax_due_gel", 0),
+                                "days_until": days_until
+                            }
+                        )
+                        if success:
+                            sent_count += 1
+
+            logger.info(f"Sent {sent_count} tax declaration reminders")
+
+        except Exception as e:
+            logger.error(f"Error checking tax declaration deadlines: {e}")
+
+    async def send_monthly_tax_summaries(self):
+        """Send monthly tax summaries on 1st of each month"""
+        try:
+            from app.services.tax_stats import TaxStatsService
+
+            # Get all users with Telegram connected
+            users = await self.db.users.find({
+                "telegram_chat_id": {"$ne": None},
+                "telegram_notifications_enabled": True,
+            }).to_list(length=None)
+
+            current_date = datetime.now(timezone.utc)
+            # Get last month's data
+            if current_date.month == 1:
+                last_month_year = current_date.year - 1
+                last_month = 12
+            else:
+                last_month_year = current_date.year
+                last_month = current_date.month - 1
+
+            month_name = datetime(last_month_year, last_month, 1).strftime("%B %Y")
+            sent_count = 0
+
+            for user in users:
+                user_id = str(user["_id"])
+                tax_service = TaxStatsService(self.db)
+
+                # Get or create declaration for last month
+                declaration = await self.db.tax_declarations.find_one({
+                    "user_id": user_id,
+                    "year": last_month_year,
+                    "month": last_month
+                })
+
+                if not declaration or declaration.get("income_gel", 0) <= 0:
+                    continue  # Skip users with no income last month
+
+                # Get YTD overview
+                overview = await tax_service.get_tax_overview(user_id, last_month_year)
+
+                deadline = declaration["filing_deadline"].strftime("%B %d")
+
+                success = await self.telegram_service.send_reminder(
+                    chat_id=user["telegram_chat_id"],
+                    reminder_type="monthly_tax_summary",
+                    data={
+                        "month_name": month_name,
+                        "income_gel": declaration.get("income_gel", 0),
+                        "tax_gel": declaration.get("tax_due_gel", 0),
+                        "transaction_count": declaration.get("transaction_count", 0),
+                        "deadline": deadline,
+                        "ytd_income": overview.total_income_ytd_gel,
+                        "ytd_tax": overview.tax_liability_ytd_gel,
+                        "threshold_percentage": overview.threshold_percentage_used
+                    }
+                )
+                if success:
+                    sent_count += 1
+
+            logger.info(f"Sent {sent_count} monthly tax summaries")
+
+        except Exception as e:
+            logger.error(f"Error sending monthly tax summaries: {e}")
+
+    async def check_threshold_warnings(self):
+        """Check for users approaching or exceeding threshold and send warnings"""
+        try:
+            from app.services.tax_stats import TaxStatsService
+
+            # Get all users with Telegram connected
+            users = await self.db.users.find({
+                "telegram_chat_id": {"$ne": None},
+                "telegram_notifications_enabled": True,
+            }).to_list(length=None)
+
+            current_year = datetime.now(timezone.utc).year
+            sent_count = 0
+
+            for user in users:
+                user_id = str(user["_id"])
+                tax_service = TaxStatsService(self.db)
+
+                # Get tax overview
+                overview = await tax_service.get_tax_overview(user_id, current_year)
+
+                # Send warnings at specific thresholds
+                threshold_pct = overview.threshold_percentage_used
+
+                should_send = False
+                severity = "info"
+
+                if threshold_pct >= 95:
+                    should_send = True
+                    severity = "critical"
+                elif threshold_pct >= 85:
+                    should_send = True
+                    severity = "high"
+                elif threshold_pct >= 75:
+                    should_send = True
+                    severity = "medium"
+
+                if should_send:
+                    success = await self.telegram_service.send_reminder(
+                        chat_id=user["telegram_chat_id"],
+                        reminder_type="threshold_warning",
+                        data={
+                            "threshold_percentage": threshold_pct,
+                            "remaining_gel": overview.threshold_remaining_gel,
+                            "severity": severity
+                        }
+                    )
+                    if success:
+                        sent_count += 1
+
+            logger.info(f"Sent {sent_count} threshold warnings")
+
+        except Exception as e:
+            logger.error(f"Error checking threshold warnings: {e}")

@@ -10,6 +10,7 @@ from app.services.transaction import TransactionService
 from app.services.currency import get_currency_service
 from app.services.telegram import TelegramService
 from app.services.scheduler import ReminderScheduler
+from app.services.tax_stats import TaxStatsService
 from app.schemas.user import UserResponse
 from bson import ObjectId
 
@@ -39,6 +40,10 @@ def get_telegram_service() -> TelegramService:
 def get_scheduler_service() -> ReminderScheduler:
     from app.main import app  # Local import to avoid circular dependency
     return ReminderScheduler(app.mongodb)
+
+def get_tax_stats_service() -> TaxStatsService:
+    from app.main import app  # Local import to avoid circular dependency
+    return TaxStatsService(app.mongodb)
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),

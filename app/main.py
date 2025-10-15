@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 from app.core.config import settings
-from app.api.endpoints import auth, users, chat, subscription, transactions, telegram
+from app.api.endpoints import auth, users, chat, subscription, transactions, telegram, tax_stats
 from app.services.stripe import StripeService
 from app.services.scheduler import ReminderScheduler
 import logging
@@ -29,6 +29,7 @@ app.include_router(chat.router, prefix="/chat")
 app.include_router(subscription.router, prefix="/subscription")
 app.include_router(transactions.router, prefix="/transactions")
 app.include_router(telegram.router, prefix="/telegram")
+app.include_router(tax_stats.router, prefix="/tax-stats")
 
 
 @app.get("/")
