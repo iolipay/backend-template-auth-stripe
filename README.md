@@ -254,8 +254,10 @@ DELETE /chat/{chat_id}
 2. **Install dependencies**: `pip install -r requirements.txt`
 3. **Set up environment variables** in `.env` file
 4. **Configure Stripe** (see Stripe Setup Guide above)
-5. **Create database indexes**: `python -m app.core.database_indexes`
-6. **Run the server**: `uvicorn app.main:app --reload`
+5. **Configure Telegram Bot** (optional - see Telegram Bot Features section)
+6. **Create database indexes**: `python -m app.core.database_indexes`
+7. **Run the server**: `uvicorn app.main:app --reload`
+8. **For Telegram development**: Run `./setup_webhook.sh` to configure ngrok
 
 ## 🚀 Production Deployment
 
@@ -265,6 +267,10 @@ DELETE /chat/{chat_id}
 - [ ] Configure production MongoDB instance
 - [ ] Set up proper email service (SMTP)
 - [ ] Configure CORS for production domains
+- [ ] **Telegram Bot** (if using):
+  - [ ] Set production Telegram webhook URL
+  - [ ] Configure `TELEGRAM_BOT_TOKEN` in production env
+  - [ ] No ngrok needed in production
 
 ## 💰 Income Tracking Features
 
@@ -285,6 +291,8 @@ DELETE /chat/{chat_id}
 
 ## 📱 Telegram Bot Features
 
+### Features
+
 - **Automated Reminders**: Daily transaction reminders at user's preferred time
 - **Weekly Summaries**: Income/expense overview sent every Monday
 - **Monthly Reports**: Detailed financial reports on the 1st of each month
@@ -296,12 +304,90 @@ DELETE /chat/{chat_id}
 - **Rich Formatting**: HTML-formatted messages with emojis for better readability
 - **Smart Error Handling**: Automatic notification disable if user blocks bot
 
-**Setup Steps:**
-1. Create bot via [@BotFather](https://t.me/BotFather) on Telegram
-2. Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME` to `.env`
-3. Restart application - scheduler starts automatically
-4. Users connect via Settings → Connect Telegram in your app
-5. Bot sends welcome message and starts automated reminders
+### Quick Setup (5 Minutes)
+
+**Step 1: Create Your Bot**
+1. Message [@BotFather](https://t.me/BotFather) on Telegram
+2. Send `/newbot` and follow the prompts
+3. Copy your bot token
+
+**Step 2: Configure Environment**
+```env
+# Add to .env
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_BOT_USERNAME=your_bot_username
+```
+
+**Step 3: Local Development Setup**
+```bash
+# Setup ngrok (one-time)
+# Sign up at: https://dashboard.ngrok.com/signup
+ngrok config add-authtoken YOUR_AUTH_TOKEN
+
+# Start webhook
+./setup_webhook.sh
+
+# Get connection link for testing
+./connect_telegram.sh
+```
+
+**Step 4: Connect Your Account**
+1. Run `./connect_telegram.sh` and login
+2. Click the generated link
+3. Click "Start" in Telegram
+4. Done! 🎉
+
+### Helper Scripts
+
+- `./setup_webhook.sh` - Configures ngrok and Telegram webhook for local development
+- `./connect_telegram.sh` - Generates connection link for linking Telegram accounts
+
+**Important:** These are one-time helper scripts that exit after running. They are NOT services that need to stay running.
+
+### What Needs To Stay Running?
+
+For local development with Telegram:
+
+**Terminal 1: Backend (Always Running)**
+```bash
+source venv/bin/activate
+uvicorn app.main:app --reload
+```
+
+**Terminal 2: Setup (Run Once Per Session)**
+```bash
+./setup_webhook.sh
+# This starts ngrok in background and exits
+# ngrok stays running, script exits
+```
+
+**Terminal 3: Connection Links (Run When Needed)**
+```bash
+./connect_telegram.sh
+# Run this each time a user wants to connect
+# Script exits after showing the link
+```
+
+Only 2 things stay running: **Backend** + **ngrok** (background process)
+
+### Production Setup
+
+For production, set permanent webhook:
+```bash
+curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+  -d "url=https://api.yourdomain.com/telegram/webhook"
+```
+
+No ngrok needed in production!
+
+### Documentation
+
+- **[Local Setup Guide](TELEGRAM_LOCAL_SETUP.md)** - Complete local development setup
+- **[ngrok Setup](NGROK_SETUP.md)** - Detailed ngrok configuration guide
+- **[Quick Start](TELEGRAM_QUICKSTART.md)** - 5-minute quick start guide
+- **[Integration Guide](TELEGRAM_INTEGRATION_GUIDE.md)** - Complete API reference
+- **[Frontend Guide](FRONTEND_TELEGRAM_GUIDE.md)** - React implementation guide
+- **[UI Mockups](TELEGRAM_UI_MOCKUPS.md)** - Design specifications
 
 ## 📚 Documentation
 
