@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from datetime import datetime
 from enum import Enum
+from app.models.tax_declaration import DeclarationStatus
 
 
 class ThresholdStatus(str, Enum):
@@ -350,3 +351,36 @@ class TaxChartData(BaseModel):
                 "total_tax": 2450.00
             }
         }
+
+
+# ========== Payment & Filing Service ==========
+
+class PaymentRequest(BaseModel):
+    """Request payment for admin filing service"""
+    year: int = Field(..., ge=2020, le=2030)
+    month: int = Field(..., ge=1, le=12)
+
+
+class PaymentResponse(BaseModel):
+    """Mock payment confirmation"""
+    declaration_id: str
+    payment_id: str = Field(..., description="Mock payment ID")
+    amount: float
+    status: str = Field(..., description="Payment status: paid")
+    paid_at: datetime
+    message: str = Field(default="Payment successful. Your declaration will be filed by our admin team.")
+
+
+class FilingServiceStatus(BaseModel):
+    """Status of filing service for a declaration"""
+    year: int
+    month: int
+    status: DeclarationStatus
+    payment_status: str
+    payment_amount: float
+    payment_date: Optional[datetime]
+    filing_method: str
+    filed_by_admin_at: Optional[datetime] = None
+    requires_correction: bool
+    correction_notes: str
+    admin_notes: str

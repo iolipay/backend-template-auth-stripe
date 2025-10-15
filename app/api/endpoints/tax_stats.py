@@ -11,7 +11,10 @@ from app.schemas.tax_stats import (
     DeclarationDetails,
     MarkDeclarationRequest,
     MarkDeclarationResponse,
-    TaxChartData
+    TaxChartData,
+    PaymentRequest,
+    PaymentResponse,
+    FilingServiceStatus
 )
 from app.services.tax_stats import TaxStatsService
 from datetime import datetime, timezone
@@ -332,3 +335,105 @@ async def auto_generate_declarations(
     except Exception as e:
         logger.error(f"Error auto-generating declarations: {e}")
         raise HTTPException(status_code=500, detail="Failed to auto-generate declarations")
+
+
+# ========== Payment & Filing Service Endpoints ==========
+
+@router.post(
+    "/filing-service/request",
+    description="Request admin filing service for a declaration"
+)
+async def request_filing_service(
+    payment_request: PaymentRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    tax_service: TaxStatsService = Depends(get_tax_stats_service)
+):
+    """
+    Request admin filing service for a specific declaration.
+
+    This transitions the declaration to AWAITING_PAYMENT status.
+
+    User will then need to call the payment endpoint to complete payment.
+    """
+    try:
+        result = await tax_service.request_filing_service(
+            current_user.id,
+            payment_request.year,
+            payment_request.month
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error requesting filing service: {e}")
+        raise HTTPException(status_code=500, detail="Failed to request filing service")
+
+
+@router.post(
+    "/filing-service/pay",
+    response_model=PaymentResponse,
+    description="Process mock payment for filing service"
+)
+async def pay_for_filing_service(
+    payment_request: PaymentRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    tax_service: TaxStatsService = Depends(get_tax_stats_service)
+) -> PaymentResponse:
+    """
+    Process mock payment for admin filing service.
+
+    **MOCK PAYMENT ONLY** - This simulates payment processing.
+
+    After payment:
+    - Declaration moves to PAYMENT_RECEIVED status
+    - Declaration enters admin queue
+    - Admin team will file the declaration on RS.ge
+
+    Fee: 50 GEL per declaration
+    """
+    try:
+        result = await tax_service.process_mock_payment(
+            current_user.id,
+            payment_request.year,
+            payment_request.month
+        )
+        return PaymentResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error processing payment: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process payment")
+
+
+@router.get(
+    "/filing-service/status/{year}/{month}",
+    response_model=FilingServiceStatus,
+    description="Get filing service status for a declaration"
+)
+async def get_filing_service_status(
+    year: int,
+    month: int,
+    current_user: UserResponse = Depends(get_current_user),
+    tax_service: TaxStatsService = Depends(get_tax_stats_service)
+) -> FilingServiceStatus:
+    """
+    Get the status of filing service for a specific declaration.
+
+    Returns:
+    - Payment status (paid/unpaid)
+    - Declaration status (pending, awaiting_payment, payment_received, in_progress, filed_by_admin, rejected)
+    - Admin notes (if any)
+    - Correction notes (if rejected and needs fixing)
+    """
+    try:
+        result = await tax_service.get_filing_service_status(
+            current_user.id,
+            year,
+            month
+        )
+        return FilingServiceStatus(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting filing service status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get filing service status")

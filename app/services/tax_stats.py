@@ -818,3 +818,492 @@ class TaxStatsService:
             await self._get_or_create_declaration(user_id, year, month)
 
         logger.info(f"Auto-generated declarations for user {user_id}, year {year}")
+
+    # ========== Payment & Filing Service Methods ==========
+
+    async def request_filing_service(self, user_id: str, year: int, month: int) -> Dict[str, Any]:
+        """
+        User requests admin filing service (mock payment)
+
+        Transitions declaration from PENDING -> AWAITING_PAYMENT
+        """
+        from bson import ObjectId
+        import uuid
+
+        # Get declaration
+        declaration = await self._get_or_create_declaration(user_id, year, month)
+        if not declaration:
+            raise ValueError("Declaration not found")
+
+        # Check if already paid/filed
+        if declaration.get("payment_status") == "paid":
+            raise ValueError("Declaration already paid for")
+
+        if declaration.get("status") not in ["pending", "overdue"]:
+            raise ValueError(f"Cannot request filing service for declaration with status: {declaration.get('status')}")
+
+        # Generate mock payment ID
+        mock_payment_id = f"MOCK_PAY_{uuid.uuid4().hex[:12].upper()}"
+
+        # Update declaration
+        await self.db.tax_declarations.update_one(
+            {"_id": ObjectId(declaration["_id"])},
+            {
+                "$set": {
+                    "status": "awaiting_payment",
+                    "payment_status": "unpaid",
+                    "payment_amount": 50.00,  # Fixed fee for now
+                    "filing_method": "admin_filed",
+                    "mock_payment_id": mock_payment_id,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+
+        logger.info(f"User {user_id} requested filing service for {year}-{month:02d}")
+
+        return {
+            "declaration_id": str(declaration["_id"]),
+            "payment_id": mock_payment_id,
+            "amount": 50.00,
+            "status": "awaiting_payment",
+            "message": "Please proceed with payment to have this declaration filed by our admin team."
+        }
+
+    async def process_mock_payment(self, user_id: str, year: int, month: int) -> Dict[str, Any]:
+        """
+        Process mock payment for filing service
+
+        Transitions declaration from AWAITING_PAYMENT -> PAYMENT_RECEIVED (ready for admin)
+        """
+        from bson import ObjectId
+
+        # Get declaration
+        declaration = await self.db.tax_declarations.find_one({
+            "user_id": user_id,
+            "year": year,
+            "month": month
+        })
+
+        if not declaration:
+            raise ValueError("Declaration not found")
+
+        if declaration.get("status") != "awaiting_payment":
+            raise ValueError(f"Cannot process payment for declaration with status: {declaration.get('status')}")
+
+        # Update declaration - mark as paid and ready for admin
+        await self.db.tax_declarations.update_one(
+            {"_id": ObjectId(declaration["_id"])},
+            {
+                "$set": {
+                    "status": "payment_received",  # Now in admin queue
+                    "payment_status": "paid",
+                    "payment_date": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+
+        logger.info(f"Mock payment processed for user {user_id}, declaration {year}-{month:02d}")
+
+        return {
+            "declaration_id": str(declaration["_id"]),
+            "payment_id": declaration.get("mock_payment_id"),
+            "amount": declaration.get("payment_amount", 50.00),
+            "status": "paid",
+            "paid_at": datetime.now(timezone.utc),
+            "message": "Payment successful. Your declaration will be filed by our admin team."
+        }
+
+    async def get_filing_service_status(self, user_id: str, year: int, month: int) -> Dict[str, Any]:
+        """Get status of filing service for a declaration"""
+        declaration = await self.db.tax_declarations.find_one({
+            "user_id": user_id,
+            "year": year,
+            "month": month
+        })
+
+        if not declaration:
+            raise ValueError("Declaration not found")
+
+        return {
+            "year": year,
+            "month": month,
+            "status": declaration.get("status", "pending"),
+            "payment_status": declaration.get("payment_status", "unpaid"),
+            "payment_amount": declaration.get("payment_amount", 50.00),
+            "payment_date": declaration.get("payment_date"),
+            "filing_method": declaration.get("filing_method", "self_service"),
+            "filed_by_admin_at": declaration.get("filed_by_admin_at"),
+            "requires_correction": declaration.get("requires_correction", False),
+            "correction_notes": declaration.get("correction_notes", ""),
+            "admin_notes": declaration.get("admin_notes", "")
+        }
+
+    # ========== Admin Methods ==========
+
+    async def get_admin_queue(self) -> Dict[str, Any]:
+        """Get admin filing queue (all users)"""
+        from bson import ObjectId
+
+        # Query declarations in different states
+        pending_payment = []
+        ready_to_file = []
+        in_progress = []
+        needs_correction = []
+
+        async for declaration in self.db.tax_declarations.find({
+            "status": {"$in": ["awaiting_payment", "payment_received", "in_progress", "rejected"]}
+        }).sort("filing_deadline", 1):
+            # Get user email
+            user = await self.db.users.find_one({"_id": ObjectId(declaration["user_id"])})
+            user_email = user.get("email", "Unknown") if user else "Unknown"
+
+            item = {
+                "id": str(declaration["_id"]),
+                "user_id": declaration["user_id"],
+                "user_email": user_email,
+                "year": declaration["year"],
+                "month": declaration["month"],
+                "income_gel": declaration["income_gel"],
+                "tax_due_gel": declaration["tax_due_gel"],
+                "status": declaration["status"],
+                "filing_deadline": declaration["filing_deadline"],
+                "payment_status": declaration.get("payment_status", "unpaid"),
+                "payment_amount": declaration.get("payment_amount", 50.00),
+                "payment_date": declaration.get("payment_date"),
+                "submitted_date": declaration.get("submitted_date"),
+                "requires_correction": declaration.get("requires_correction", False),
+                "transaction_count": declaration.get("transaction_count", 0)
+            }
+
+            if declaration["status"] == "awaiting_payment":
+                pending_payment.append(item)
+            elif declaration["status"] == "payment_received":
+                ready_to_file.append(item)
+            elif declaration["status"] == "in_progress":
+                in_progress.append(item)
+            elif declaration["status"] == "rejected":
+                needs_correction.append(item)
+
+        return {
+            "pending_payment": pending_payment,
+            "ready_to_file": ready_to_file,
+            "in_progress": in_progress,
+            "needs_correction": needs_correction,
+            "total_count": len(pending_payment) + len(ready_to_file) + len(in_progress) + len(needs_correction)
+        }
+
+    async def admin_start_filing(self, declaration_id: str, admin_user_id: str) -> Dict[str, Any]:
+        """Admin starts filing a declaration"""
+        from bson import ObjectId
+
+        declaration = await self.db.tax_declarations.find_one({"_id": ObjectId(declaration_id)})
+        if not declaration:
+            raise ValueError("Declaration not found")
+
+        if declaration["status"] != "payment_received":
+            raise ValueError(f"Cannot start filing declaration with status: {declaration['status']}")
+
+        # Update to in_progress
+        await self.db.tax_declarations.update_one(
+            {"_id": ObjectId(declaration_id)},
+            {
+                "$set": {
+                    "status": "in_progress",
+                    "filed_by_admin_id": admin_user_id,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+
+        logger.info(f"Admin {admin_user_id} started filing declaration {declaration_id}")
+
+        return {"message": "Declaration marked as in progress"}
+
+    async def admin_complete_filing(self, declaration_id: str, admin_user_id: str, confirmation_number: Optional[str] = None, admin_notes: Optional[str] = None) -> Dict[str, Any]:
+        """Admin completes filing a declaration"""
+        from bson import ObjectId
+
+        declaration = await self.db.tax_declarations.find_one({"_id": ObjectId(declaration_id)})
+        if not declaration:
+            raise ValueError("Declaration not found")
+
+        if declaration["status"] != "in_progress":
+            raise ValueError(f"Cannot complete declaration with status: {declaration['status']}")
+
+        # Update to filed
+        update_data = {
+            "status": "filed_by_admin",
+            "filed_by_admin_at": datetime.now(timezone.utc),
+            "submitted_date": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
+        }
+
+        if admin_notes:
+            update_data["admin_notes"] = admin_notes
+
+        if confirmation_number:
+            update_data["admin_notes"] = f"{admin_notes or ''}\nRS.ge Confirmation: {confirmation_number}".strip()
+
+        await self.db.tax_declarations.update_one(
+            {"_id": ObjectId(declaration_id)},
+            {"$set": update_data}
+        )
+
+        logger.info(f"Admin {admin_user_id} completed filing declaration {declaration_id}")
+
+        return {"message": "Declaration filed successfully"}
+
+    async def admin_reject_declaration(self, declaration_id: str, admin_user_id: str, correction_notes: str, admin_notes: Optional[str] = None) -> Dict[str, Any]:
+        """Admin rejects declaration and requests corrections"""
+        from bson import ObjectId
+
+        declaration = await self.db.tax_declarations.find_one({"_id": ObjectId(declaration_id)})
+        if not declaration:
+            raise ValueError("Declaration not found")
+
+        if declaration["status"] not in ["payment_received", "in_progress"]:
+            raise ValueError(f"Cannot reject declaration with status: {declaration['status']}")
+
+        # Update to rejected
+        update_data = {
+            "status": "rejected",
+            "requires_correction": True,
+            "correction_notes": correction_notes,
+            "updated_at": datetime.now(timezone.utc)
+        }
+
+        if admin_notes:
+            update_data["admin_notes"] = admin_notes
+
+        await self.db.tax_declarations.update_one(
+            {"_id": ObjectId(declaration_id)},
+            {"$set": update_data}
+        )
+
+        logger.info(f"Admin {admin_user_id} rejected declaration {declaration_id}")
+
+        return {"message": "Declaration rejected. User notified to make corrections."}
+
+    async def get_all_declarations(
+        self,
+        status: Optional[str] = None,
+        user_id: Optional[str] = None,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        limit: int = 100,
+        skip: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Get all declarations across all users (admin only)
+
+        Args:
+            status: Filter by declaration status
+            user_id: Filter by specific user
+            year: Filter by year
+            month: Filter by month
+            limit: Max results to return
+            skip: Number of results to skip (pagination)
+        """
+        from bson import ObjectId
+
+        # Build filter query
+        query = {}
+
+        if status:
+            query["status"] = status
+        if user_id:
+            query["user_id"] = user_id
+        if year:
+            query["year"] = year
+        if month:
+            query["month"] = month
+
+        # Get total count
+        total_count = await self.db.tax_declarations.count_documents(query)
+
+        # Get declarations
+        declarations = []
+        total_revenue = 0.0
+
+        async for declaration in self.db.tax_declarations.find(query).sort("filing_deadline", -1).skip(skip).limit(limit):
+            # Get user email
+            user = await self.db.users.find_one({"_id": ObjectId(declaration["user_id"])})
+            user_email = user.get("email", "Unknown") if user else "Unknown"
+
+            item = {
+                "id": str(declaration["_id"]),
+                "user_id": declaration["user_id"],
+                "user_email": user_email,
+                "year": declaration["year"],
+                "month": declaration["month"],
+                "income_gel": declaration["income_gel"],
+                "tax_due_gel": declaration["tax_due_gel"],
+                "status": declaration["status"],
+                "filing_deadline": declaration["filing_deadline"],
+                "payment_status": declaration.get("payment_status", "unpaid"),
+                "payment_amount": declaration.get("payment_amount", 50.00),
+                "payment_date": declaration.get("payment_date"),
+                "submitted_date": declaration.get("submitted_date"),
+                "requires_correction": declaration.get("requires_correction", False),
+                "transaction_count": declaration.get("transaction_count", 0)
+            }
+
+            declarations.append(item)
+
+            # Calculate revenue
+            if declaration.get("payment_status") == "paid":
+                total_revenue += declaration.get("payment_amount", 0.0)
+
+        return {
+            "declarations": declarations,
+            "total_count": total_count,
+            "total_revenue": total_revenue
+        }
+
+    async def get_user_declarations(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all declarations for a specific user (admin viewing user's data)"""
+        from bson import ObjectId
+
+        declarations = []
+        user = await self.db.users.find_one({"_id": ObjectId(user_id)})
+        user_email = user.get("email", "Unknown") if user else "Unknown"
+
+        async for declaration in self.db.tax_declarations.find({"user_id": user_id}).sort("year", -1).sort("month", -1):
+            item = {
+                "id": str(declaration["_id"]),
+                "user_id": declaration["user_id"],
+                "user_email": user_email,
+                "year": declaration["year"],
+                "month": declaration["month"],
+                "income_gel": declaration["income_gel"],
+                "tax_due_gel": declaration["tax_due_gel"],
+                "status": declaration["status"],
+                "filing_deadline": declaration["filing_deadline"],
+                "payment_status": declaration.get("payment_status", "unpaid"),
+                "payment_amount": declaration.get("payment_amount", 50.00),
+                "payment_date": declaration.get("payment_date"),
+                "submitted_date": declaration.get("submitted_date"),
+                "requires_correction": declaration.get("requires_correction", False),
+                "transaction_count": declaration.get("transaction_count", 0)
+            }
+            declarations.append(item)
+
+        return declarations
+
+    async def get_all_users(self) -> List[Dict[str, Any]]:
+        """Get all users with their declaration stats (admin only)"""
+        from bson import ObjectId
+
+        users = []
+
+        async for user in self.db.users.find({}).sort("created_at", -1):
+            user_id = str(user["_id"])
+
+            # Count declarations
+            total_declarations = await self.db.tax_declarations.count_documents({"user_id": user_id})
+
+            # Count filed declarations
+            total_filed = await self.db.tax_declarations.count_documents({
+                "user_id": user_id,
+                "status": {"$in": ["submitted", "filed_by_admin"]}
+            })
+
+            # Calculate total paid
+            total_paid = 0.0
+            async for declaration in self.db.tax_declarations.find({
+                "user_id": user_id,
+                "payment_status": "paid"
+            }):
+                total_paid += declaration.get("payment_amount", 0.0)
+
+            users.append({
+                "id": user_id,
+                "email": user["email"],
+                "is_admin": user.get("is_admin", False),
+                "is_verified": user.get("is_verified", False),
+                "admin_since": user.get("admin_since"),
+                "created_at": user["created_at"],
+                "subscription_plan": user.get("subscription_plan", "free"),
+                "total_declarations": total_declarations,
+                "total_filed": total_filed,
+                "total_paid": total_paid
+            })
+
+        return users
+
+    async def get_real_admin_stats(self) -> Dict[str, Any]:
+        """Get real admin dashboard statistics"""
+        from datetime import datetime, timezone
+
+        # Get current month boundaries
+        now = datetime.now(timezone.utc)
+        month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+        if now.month == 12:
+            next_month = datetime(now.year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            next_month = datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc)
+
+        # Count declarations this month
+        total_declarations = await self.db.tax_declarations.count_documents({
+            "created_at": {"$gte": month_start, "$lt": next_month}
+        })
+
+        # Count by status
+        pending_payment = await self.db.tax_declarations.count_documents({
+            "status": "awaiting_payment",
+            "created_at": {"$gte": month_start, "$lt": next_month}
+        })
+
+        ready_to_file = await self.db.tax_declarations.count_documents({
+            "status": "payment_received",
+            "created_at": {"$gte": month_start, "$lt": next_month}
+        })
+
+        in_progress = await self.db.tax_declarations.count_documents({
+            "status": "in_progress",
+            "created_at": {"$gte": month_start, "$lt": next_month}
+        })
+
+        filed_this_month = await self.db.tax_declarations.count_documents({
+            "status": "filed_by_admin",
+            "filed_by_admin_at": {"$gte": month_start, "$lt": next_month}
+        })
+
+        rejected_this_month = await self.db.tax_declarations.count_documents({
+            "status": "rejected",
+            "updated_at": {"$gte": month_start, "$lt": next_month}
+        })
+
+        # Calculate revenue this month
+        total_revenue = 0.0
+        async for declaration in self.db.tax_declarations.find({
+            "payment_status": "paid",
+            "payment_date": {"$gte": month_start, "$lt": next_month}
+        }):
+            total_revenue += declaration.get("payment_amount", 0.0)
+
+        # Calculate average filing time
+        filing_times = []
+        async for declaration in self.db.tax_declarations.find({
+            "status": "filed_by_admin",
+            "filed_by_admin_at": {"$gte": month_start, "$lt": next_month}
+        }):
+            if declaration.get("payment_date") and declaration.get("filed_by_admin_at"):
+                time_diff = declaration["filed_by_admin_at"] - declaration["payment_date"]
+                hours = time_diff.total_seconds() / 3600
+                filing_times.append(hours)
+
+        avg_filing_time = sum(filing_times) / len(filing_times) if filing_times else None
+
+        return {
+            "total_declarations_this_month": total_declarations,
+            "pending_payment": pending_payment,
+            "ready_to_file": ready_to_file,
+            "in_progress": in_progress,
+            "filed_this_month": filed_this_month,
+            "rejected_this_month": rejected_this_month,
+            "total_revenue_this_month": total_revenue,
+            "average_filing_time_hours": round(avg_filing_time, 2) if avg_filing_time else None
+        }

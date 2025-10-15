@@ -33,6 +33,10 @@ class UserInDB(UserBase):
     telegram_connection_token: Optional[str] = None
     telegram_connection_token_expires: Optional[datetime] = None
 
+    # Admin role fields
+    is_admin: bool = Field(default=False, description="Whether user has admin privileges for filing declarations")
+    admin_since: Optional[datetime] = Field(None, description="When user was granted admin privileges")
+
 class User(UserBase):
     id: str
     created_at: datetime

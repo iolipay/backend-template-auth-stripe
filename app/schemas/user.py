@@ -27,6 +27,9 @@ class UserResponse(UserBase):
     telegram_notifications_enabled: bool = True
     telegram_reminder_time: str = "21:00"
 
+    # Admin fields
+    is_admin: bool = False
+
 
 class PasswordChange(BaseModel):
     current_password: str

@@ -4,7 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FastAPI backend template with MongoDB, JWT authentication, email verification, Stripe subscription management, transaction tracking with automatic currency conversion, Telegram bot integration with automated reminders, and chat functionality. This is a production-ready authentication system designed to be used as a foundation for SaaS applications with tiered subscription access.
+FastAPI backend template with MongoDB, JWT authentication, email verification, Stripe subscription management, transaction tracking with automatic currency conversion, Telegram bot integration with automated reminders, **admin-managed tax filing service**, and chat functionality. This is a production-ready authentication system designed to be used as a foundation for SaaS applications with tiered subscription access.
+
+**Key Features**:
+- JWT authentication with email verification
+- Stripe subscription management (Free, Pro, Premium tiers)
+- Multi-currency transaction tracking with automatic GEL conversion
+- Georgian small business tax management (1% rate, 500k GEL threshold)
+- **Admin-managed tax filing service** (users pay 50 GEL, admins file declarations)
+- Telegram bot integration with automated reminders
+- Chat functionality with streaming support
 
 ## Development Commands
 
@@ -239,8 +248,56 @@ Production checklist:
 - Set up Telegram webhook URL in production (optional, can use polling)
 - Monitor Telegram message delivery rates and failed notifications
 
+## Admin System
+
+### Admin Account Management
+
+Admins can view ALL users and ALL declarations across the system. Regular users can only see their own data.
+
+**Creating Admin Accounts**:
+```bash
+python -m app.scripts.create_admin
+```
+
+This script allows you to:
+1. Grant admin privileges to existing users
+2. Revoke admin privileges
+3. List all current admins
+
+**Admin vs Regular Users**:
+- **Admins** (`is_admin: true`): Access all `/admin/*` endpoints, can view all users and declarations
+- **Regular Users** (`is_admin: false`): Can only access their own data via `/tax-stats/*` endpoints
+
+**Admin Endpoints** (8 total):
+- `GET /admin/declarations/all` - View all declarations from all users (with filtering)
+- `GET /admin/declarations/user/{user_id}/declarations` - View specific user's declarations
+- `GET /admin/declarations/users/list` - List all users with declaration stats
+- `GET /admin/declarations/stats` - Real-time admin dashboard statistics
+- `GET /admin/declarations/queue` - Filing queue (by status)
+- `POST /admin/declarations/{id}/start` - Start filing a declaration
+- `POST /admin/declarations/{id}/complete` - Complete filing
+- `POST /admin/declarations/{id}/reject` - Reject and request corrections
+
+All admin endpoints require `is_admin: true` and use the `@require_admin` decorator.
+
+**Database Field**:
+- `users.is_admin` (boolean): Whether user has admin privileges
+- `users.admin_since` (datetime): When admin access was granted
+
 ## Additional Documentation
 
 For detailed guides on specific features:
+
+### Backend Setup & Admin
+- **Admin Setup**: See `ADMIN_SETUP_GUIDE.md` for creating admins and using admin dashboard
+- **Admin Filing Service**: See `ADMIN_FILING_SERVICE_GUIDE.md` for complete filing workflow and API reference
+- **Quick Start**: See `QUICK_START_ADMIN_FILING.md` for rapid setup guide
+- **Admin System Summary**: See `ADMIN_SYSTEM_SUMMARY.md` for complete implementation overview
+
+### Frontend Integration
+- **Frontend Integration Guide**: See `FRONTEND_INTEGRATION_GUIDE.md` for complete business logic, React components, API integration, and UI/UX examples
+- **Frontend Quick Reference**: See `FRONTEND_QUICK_REFERENCE.md` for API endpoints, status codes, and common use cases
+
+### Features
 - **Telegram Integration**: See `TELEGRAM_INTEGRATION_GUIDE.md` for complete setup, API reference, and frontend integration examples
-- **Charts & Statistics**: See `CHARTS_AND_STATS_GUIDE.md` for transaction analytics and visualization endpoints
+- **Tax Statistics**: See `TAX_STATS_GUIDE.md` for tax calculation, insights, and reporting features
