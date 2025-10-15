@@ -299,3 +299,299 @@ class TransactionService:
             currencies_used=sorted(list(currencies)),
             by_category=by_category
         )
+
+    async def get_monthly_statistics(self, user_id: str, year: Optional[int] = None):
+        """
+        Get monthly statistics for a specific year.
+
+        Args:
+            user_id: User ID
+            year: Year to get statistics for (default: current year)
+
+        Returns:
+            Monthly statistics with totals
+        """
+        from app.schemas.transaction import MonthlyStats, MonthlyStatsResponse
+        from calendar import monthrange
+
+        if year is None:
+            year = datetime.now(timezone.utc).year
+
+        # Build aggregation pipeline for MongoDB
+        pipeline = [
+            {
+                "$match": {
+                    "user_id": user_id,
+                    "transaction_date": {
+                        "$gte": datetime(year, 1, 1, tzinfo=timezone.utc),
+                        "$lt": datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "year": {"$year": "$transaction_date"},
+                    "month": {"$month": "$transaction_date"},
+                    "amount_gel": 1,
+                    "category": 1,
+                    "currency": 1
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "year": "$year",
+                        "month": "$month"
+                    },
+                    "total_income": {"$sum": "$amount_gel"},
+                    "count": {"$sum": 1},
+                    "categories": {"$push": {"category": "$category", "amount": "$amount_gel"}},
+                    "currencies": {"$addToSet": "$currency"}
+                }
+            },
+            {
+                "$sort": {"_id.year": 1, "_id.month": 1}
+            }
+        ]
+
+        results = await self.db.transactions.aggregate(pipeline).to_list(length=None)
+
+        months = []
+        grand_total = 0.0
+
+        for result in results:
+            month_str = f"{result['_id']['year']}-{result['_id']['month']:02d}"
+            total_income = result['total_income']
+            count = result['count']
+
+            # Calculate category breakdown
+            by_category = {}
+            for cat_data in result['categories']:
+                category = cat_data['category']
+                amount = cat_data['amount']
+                by_category[category] = by_category.get(category, 0.0) + amount
+
+            months.append(MonthlyStats(
+                month=month_str,
+                total_income_gel=round(total_income, 2),
+                transaction_count=count,
+                avg_transaction_gel=round(total_income / count, 2) if count > 0 else 0.0,
+                by_category=by_category,
+                currencies_used=sorted(result['currencies'])
+            ))
+
+            grand_total += total_income
+
+        avg_monthly = grand_total / len(months) if months else 0.0
+
+        return MonthlyStatsResponse(
+            months=months,
+            total_months=len(months),
+            grand_total_gel=round(grand_total, 2),
+            avg_monthly_income_gel=round(avg_monthly, 2)
+        )
+
+    async def get_current_month_stats(self, user_id: str):
+        """
+        Get detailed statistics for the current month with projections.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Current month statistics with projections
+        """
+        from app.schemas.transaction import CurrentMonthStats
+        from calendar import monthrange
+
+        now = datetime.now(timezone.utc)
+        current_year = now.year
+        current_month = now.month
+
+        # Get first and last day of current month
+        first_day = datetime(current_year, current_month, 1, tzinfo=timezone.utc)
+        days_in_month = monthrange(current_year, current_month)[1]
+        last_day = datetime(current_year, current_month, days_in_month, 23, 59, 59, tzinfo=timezone.utc)
+
+        # Get current month transactions
+        query = {
+            "user_id": user_id,
+            "transaction_date": {
+                "$gte": first_day,
+                "$lte": last_day
+            }
+        }
+
+        cursor = self.db.transactions.find(query)
+        transactions = await cursor.to_list(length=None)
+
+        # Calculate statistics
+        total_income = 0.0
+        currencies = set()
+        by_category = {}
+
+        for trans in transactions:
+            amount_gel = trans.get("amount_gel", 0.0)
+            category = trans.get("category")
+            currency = trans.get("currency")
+
+            if currency:
+                currencies.add(currency)
+
+            total_income += amount_gel
+            if category:
+                by_category[category] = by_category.get(category, 0.0) + amount_gel
+
+        # Calculate days
+        days_elapsed = now.day
+        days_remaining = days_in_month - days_elapsed
+
+        # Calculate projections
+        daily_avg = total_income / days_elapsed if days_elapsed > 0 else 0.0
+        projected_income = daily_avg * days_in_month
+
+        # Get last month's total
+        if current_month == 1:
+            last_month_year = current_year - 1
+            last_month = 12
+        else:
+            last_month_year = current_year
+            last_month = current_month - 1
+
+        last_month_first = datetime(last_month_year, last_month, 1, tzinfo=timezone.utc)
+        last_month_days = monthrange(last_month_year, last_month)[1]
+        last_month_last = datetime(last_month_year, last_month, last_month_days, 23, 59, 59, tzinfo=timezone.utc)
+
+        last_month_query = {
+            "user_id": user_id,
+            "transaction_date": {
+                "$gte": last_month_first,
+                "$lte": last_month_last
+            }
+        }
+
+        last_month_cursor = self.db.transactions.find(last_month_query)
+        last_month_trans = await last_month_cursor.to_list(length=None)
+        last_month_total = sum(t.get("amount_gel", 0.0) for t in last_month_trans)
+
+        # Calculate month-over-month change
+        mom_change = None
+        if last_month_total > 0:
+            mom_change = round(((total_income - last_month_total) / last_month_total) * 100, 2)
+
+        avg_transaction = total_income / len(transactions) if transactions else 0.0
+
+        return CurrentMonthStats(
+            month=f"{current_year}-{current_month:02d}",
+            total_income_gel=round(total_income, 2),
+            transaction_count=len(transactions),
+            avg_transaction_gel=round(avg_transaction, 2),
+            by_category=by_category,
+            currencies_used=sorted(list(currencies)),
+            days_elapsed=days_elapsed,
+            days_in_month=days_in_month,
+            days_remaining=days_remaining,
+            daily_avg_gel=round(daily_avg, 2),
+            projected_monthly_income_gel=round(projected_income, 2),
+            last_month_income_gel=round(last_month_total, 2) if last_month_total > 0 else None,
+            month_over_month_change=mom_change
+        )
+
+    async def get_chart_data(
+        self,
+        user_id: str,
+        chart_type: str = "daily",
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None
+    ):
+        """
+        Get time-series data for charts.
+
+        Args:
+            user_id: User ID
+            chart_type: Type of chart (daily, weekly, monthly)
+            date_from: Start date
+            date_to: End date
+
+        Returns:
+            Chart data with time-series points
+        """
+        from app.schemas.transaction import ChartData, ChartDataPoint
+        from datetime import timedelta
+
+        # Set default date range if not provided
+        if date_to is None:
+            date_to = datetime.now(timezone.utc).date()
+
+        if date_from is None:
+            if chart_type == "daily":
+                date_from = date_to - timedelta(days=30)
+            elif chart_type == "weekly":
+                date_from = date_to - timedelta(weeks=12)
+            else:  # monthly
+                date_from = date_to - timedelta(days=365)
+
+        # Build query
+        query = {
+            "user_id": user_id,
+            "transaction_date": {
+                "$gte": datetime.combine(date_from, datetime.min.time()).replace(tzinfo=timezone.utc),
+                "$lte": datetime.combine(date_to, datetime.max.time()).replace(tzinfo=timezone.utc)
+            }
+        }
+
+        # Get all transactions
+        cursor = self.db.transactions.find(query).sort("transaction_date", 1)
+        transactions = await cursor.to_list(length=None)
+
+        # Group by period
+        data_points = {}
+
+        for trans in transactions:
+            trans_date = trans.get("transaction_date")
+            if isinstance(trans_date, datetime):
+                trans_date = trans_date.date()
+
+            if chart_type == "daily":
+                key = trans_date.strftime("%Y-%m-%d")
+            elif chart_type == "weekly":
+                # Get Monday of the week
+                week_start = trans_date - timedelta(days=trans_date.weekday())
+                key = week_start.strftime("%Y-%m-%d")
+            else:  # monthly
+                key = trans_date.strftime("%Y-%m")
+
+            amount_gel = trans.get("amount_gel", 0.0)
+
+            if key not in data_points:
+                data_points[key] = {"income": 0.0, "count": 0}
+
+            data_points[key]["income"] += amount_gel
+            data_points[key]["count"] += 1
+
+        # Convert to list of ChartDataPoint
+        chart_points = []
+        total_income = 0.0
+        total_count = 0
+
+        for date_key in sorted(data_points.keys()):
+            income = data_points[date_key]["income"]
+            count = data_points[date_key]["count"]
+
+            chart_points.append(ChartDataPoint(
+                date=date_key,
+                income_gel=round(income, 2),
+                transaction_count=count
+            ))
+
+            total_income += income
+            total_count += count
+
+        return ChartData(
+            chart_type=chart_type,
+            period_start=date_from.strftime("%Y-%m-%d"),
+            period_end=date_to.strftime("%Y-%m-%d"),
+            data=chart_points,
+            total_income_gel=round(total_income, 2),
+            total_transactions=total_count
+        )

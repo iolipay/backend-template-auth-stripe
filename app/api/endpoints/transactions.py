@@ -9,7 +9,10 @@ from app.schemas.transaction import (
     TransactionResponse,
     TransactionListResponse,
     TransactionStats,
-    CurrencyRate
+    CurrencyRate,
+    MonthlyStatsResponse,
+    CurrentMonthStats,
+    ChartData
 )
 from app.services.transaction import TransactionService
 from app.services.currency import get_currency_service
@@ -252,3 +255,107 @@ async def get_currency_rate(
     except Exception as e:
         logger.error(f"Error getting exchange rate: {e}")
         raise HTTPException(status_code=500, detail="Failed to get exchange rate")
+
+
+@router.get(
+    "/stats/monthly",
+    response_model=MonthlyStatsResponse,
+    description="Get monthly income statistics for a year"
+)
+async def get_monthly_statistics(
+    year: Optional[int] = Query(None, description="Year to get statistics for (default: current year)"),
+    current_user: UserResponse = Depends(get_current_user),
+    transaction_service: TransactionService = Depends(get_transaction_service)
+) -> MonthlyStatsResponse:
+    """
+    Get monthly breakdown of income statistics for a specific year.
+
+    Returns statistics for each month including:
+    - Total income in GEL
+    - Transaction count
+    - Average transaction amount
+    - Breakdown by category
+    - Currencies used
+
+    Also includes grand total and average monthly income across all months.
+    """
+    try:
+        stats = await transaction_service.get_monthly_statistics(
+            user_id=current_user.id,
+            year=year
+        )
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting monthly statistics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get monthly statistics")
+
+
+@router.get(
+    "/stats/current-month",
+    response_model=CurrentMonthStats,
+    description="Get detailed statistics for the current month with projections"
+)
+async def get_current_month_statistics(
+    current_user: UserResponse = Depends(get_current_user),
+    transaction_service: TransactionService = Depends(get_transaction_service)
+) -> CurrentMonthStats:
+    """
+    Get detailed statistics for the current month including:
+    - Income so far this month
+    - Days elapsed and remaining
+    - Daily average income
+    - Projected end-of-month total
+    - Comparison to last month (percentage change)
+    - Breakdown by category
+    """
+    try:
+        stats = await transaction_service.get_current_month_stats(current_user.id)
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting current month statistics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get current month statistics")
+
+
+@router.get(
+    "/stats/chart-data",
+    response_model=ChartData,
+    description="Get time-series data for charts"
+)
+async def get_chart_data(
+    chart_type: str = Query("daily", description="Chart type: daily, weekly, or monthly"),
+    date_from: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    current_user: UserResponse = Depends(get_current_user),
+    transaction_service: TransactionService = Depends(get_transaction_service)
+) -> ChartData:
+    """
+    Get time-series data for creating charts.
+
+    Chart types:
+    - **daily**: Daily income data (default: last 30 days)
+    - **weekly**: Weekly income data (default: last 12 weeks)
+    - **monthly**: Monthly income data (default: last 12 months)
+
+    Returns data points with date, income amount in GEL, and transaction count.
+    Perfect for line charts, bar charts, or area charts.
+    """
+    # Validate chart type
+    if chart_type not in ["daily", "weekly", "monthly"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid chart_type. Must be one of: daily, weekly, monthly"
+        )
+
+    try:
+        chart_data = await transaction_service.get_chart_data(
+            user_id=current_user.id,
+            chart_type=chart_type,
+            date_from=date_from,
+            date_to=date_to
+        )
+        return chart_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting chart data: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get chart data")
