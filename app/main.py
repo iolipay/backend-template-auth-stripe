@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 from app.core.config import settings
-from app.api.endpoints import auth, users, chat, subscription
+from app.api.endpoints import auth, users, chat, subscription, transactions
 from app.services.stripe import StripeService
 import logging
 
@@ -26,6 +26,7 @@ app.include_router(auth.router, prefix="/auth")
 app.include_router(users.router, prefix="/users")
 app.include_router(chat.router, prefix="/chat")
 app.include_router(subscription.router, prefix="/subscription")
+app.include_router(transactions.router, prefix="/transactions")
 
 
 @app.get("/")

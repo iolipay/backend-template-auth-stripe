@@ -1,12 +1,13 @@
 # FastAPI MongoDB Authentication API Overview
 
-Your backend API is a comprehensive authentication system built with FastAPI and MongoDB, providing essential user authentication, account management, chat functionality, and **Stripe subscription management**. Here's what it does:
+Your backend API is a comprehensive authentication system built with FastAPI and MongoDB, providing essential user authentication, account management, **transaction tracking with currency conversion**, chat functionality, and **Stripe subscription management**. Here's what it does:
 
 ## Core Functionality
 
 - **User Registration**: Creates new user accounts storing email and securely hashed passwords
 - **User Authentication**: Validates credentials and issues access tokens (OAuth2/JWT based)
 - **Account Management**: Allows users to view their profile information
+- **💰 Income Tracking**: Track income in multiple currencies with automatic conversion to GEL
 - **Chat Streaming**: Provides real-time chat streaming capabilities with message history
 - **🆕 Subscription Management**: Complete Stripe integration with multiple subscription tiers
 
@@ -45,6 +46,17 @@ Your backend API is a comprehensive authentication system built with FastAPI and
 - `/subscription/cancel`: Cancel active subscription directly
 - `/subscription/me`: Get current user's subscription information
 - `/webhook`: Stripe webhook handler for subscription events
+
+### 💰 Income Tracking
+
+- `POST /transactions/`: Create a new income transaction with auto-conversion to GEL
+- `GET /transactions/`: List income transactions (with filtering by date, currency, category)
+- `GET /transactions/stats`: Get income statistics (total income, breakdown by category)
+- `GET /transactions/{id}`: Get a specific transaction
+- `PUT /transactions/{id}`: Update a transaction
+- `DELETE /transactions/{id}`: Delete a transaction
+- `GET /transactions/currencies/available`: Get list of supported currencies
+- `GET /transactions/currencies/rate`: Get exchange rate for a currency
 
 ### Chat
 
@@ -223,7 +235,8 @@ DELETE /chat/{chat_id}
 2. **Install dependencies**: `pip install -r requirements.txt`
 3. **Set up environment variables** in `.env` file
 4. **Configure Stripe** (see Stripe Setup Guide above)
-5. **Run the server**: `uvicorn app.main:app --reload`
+5. **Create database indexes**: `python -m app.core.database_indexes`
+6. **Run the server**: `uvicorn app.main:app --reload`
 
 ## 🚀 Production Deployment
 
@@ -234,10 +247,28 @@ DELETE /chat/{chat_id}
 - [ ] Set up proper email service (SMTP)
 - [ ] Configure CORS for production domains
 
-## 📚 Additional Resources
+## 💰 Income Tracking Features
 
-- [Stripe Setup Guide](STRIPE_SETUP.md) - Detailed Stripe configuration
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [Stripe API Reference](https://stripe.com/docs/api)
+- **Multi-currency support**: Track income in USD, EUR, GBP, RUB, and 30+ other currencies
+- **Automatic conversion**: All amounts automatically converted to GEL using official NBG rates
+- **Smart filtering**: Filter by date range, currency, and category
+- **Real-time statistics**: Get total income and breakdown by category
+- **Historical accuracy**: Uses official exchange rates for the transaction date
+- **Efficient caching**: Exchange rates cached for 1 hour to minimize API calls
+- **Income categories**: salary, freelance, business, investment, rental_income, dividends, bonus, commission, other
 
-The system includes proper validation, error handling, and rate limiting (for verification emails), following security best practices for user authentication and subscription management workflows.
+## 📚 Documentation
+
+- **[API Quick Reference](API_QUICK_REFERENCE.md)** ⚡ - Quick reference for all API endpoints with curl examples
+- **[Frontend Integration Guide](FRONTEND_INTEGRATION.md)** 💻 - Complete React integration examples and components
+- **[Transaction Management Guide](TRANSACTIONS_GUIDE.md)** 💰 - Detailed transaction API documentation
+- **[Stripe Setup Guide](STRIPE_SETUP.md)** 💳 - Stripe configuration and subscription management
+- **[Architecture Guide](CLAUDE.md)** 🏗️ - System architecture and development guide
+
+## 🔗 External Resources
+
+- [FastAPI Documentation](https://fastapi.tiangolo.com/) - FastAPI framework docs
+- [Stripe API Reference](https://stripe.com/docs/api) - Stripe integration docs
+- [National Bank of Georgia API](https://nbg.gov.ge/en/monetary-policy/currency) - Official exchange rates
+
+The system includes proper validation, error handling, and rate limiting (for verification emails), following security best practices for user authentication, transaction management, and subscription workflows.

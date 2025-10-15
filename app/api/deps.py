@@ -6,6 +6,8 @@ from app.core.exceptions import AuthenticationError
 from app.services.auth import AuthService
 from app.services.chat import ChatService
 from app.services.stripe import StripeService
+from app.services.transaction import TransactionService
+from app.services.currency import get_currency_service
 from app.schemas.user import UserResponse
 from bson import ObjectId
 
@@ -22,6 +24,11 @@ def get_chat_service() -> ChatService:
 def get_stripe_service() -> StripeService:
     from app.main import app  # Local import to avoid circular dependency
     return StripeService(app.mongodb)
+
+def get_transaction_service() -> TransactionService:
+    from app.main import app  # Local import to avoid circular dependency
+    currency_service = get_currency_service()
+    return TransactionService(app.mongodb, currency_service)
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
