@@ -8,6 +8,8 @@ from app.services.chat import ChatService
 from app.services.stripe import StripeService
 from app.services.transaction import TransactionService
 from app.services.currency import get_currency_service
+from app.services.telegram import TelegramService
+from app.services.scheduler import ReminderScheduler
 from app.schemas.user import UserResponse
 from bson import ObjectId
 
@@ -29,6 +31,14 @@ def get_transaction_service() -> TransactionService:
     from app.main import app  # Local import to avoid circular dependency
     currency_service = get_currency_service()
     return TransactionService(app.mongodb, currency_service)
+
+def get_telegram_service() -> TelegramService:
+    from app.main import app  # Local import to avoid circular dependency
+    return TelegramService(app.mongodb)
+
+def get_scheduler_service() -> ReminderScheduler:
+    from app.main import app  # Local import to avoid circular dependency
+    return ReminderScheduler(app.mongodb)
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),

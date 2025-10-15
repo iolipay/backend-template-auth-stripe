@@ -31,7 +31,12 @@ class Settings(BaseSettings):
     
     # Frontend URL
     FRONTEND_URL: str = "http://localhost:3000"  # Default value for development
-    
+
+    # Telegram Bot Settings
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_BOT_USERNAME: Optional[str] = None
+    TELEGRAM_WEBHOOK_URL: Optional[str] = None  # For production webhook mode
+
     @property
     def CORS_ORIGINS_LIST(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]

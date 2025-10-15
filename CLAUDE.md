@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FastAPI backend template with MongoDB, JWT authentication, email verification, Stripe subscription management, transaction tracking with automatic currency conversion, and chat functionality. This is a production-ready authentication system designed to be used as a foundation for SaaS applications with tiered subscription access.
+FastAPI backend template with MongoDB, JWT authentication, email verification, Stripe subscription management, transaction tracking with automatic currency conversion, Telegram bot integration with automated reminders, and chat functionality. This is a production-ready authentication system designed to be used as a foundation for SaaS applications with tiered subscription access.
 
 ## Development Commands
 
@@ -36,7 +36,7 @@ The codebase follows a clean architecture pattern with clear separation of conce
   - `subscription.py`: Subscription hierarchy, access control decorators, usage limits, and feature flags
   - `exceptions.py`: Custom HTTP exceptions
 - **app/api/**: API layer
-  - `endpoints/`: Route handlers for auth, users, chat, subscription, transactions
+  - `endpoints/`: Route handlers for auth, users, chat, subscription, transactions, telegram
   - `deps.py`: Dependency injection (get_current_user, service providers)
 - **app/services/**: Business logic layer
   - `auth.py`: User authentication, registration, password management, email verification
@@ -45,14 +45,17 @@ The codebase follows a clean architecture pattern with clear separation of conce
   - `chat.py`: Chat functionality with streaming support
   - `transaction.py`: Transaction management with filtering, statistics
   - `currency.py`: Currency conversion using National Bank of Georgia API with caching
+  - `telegram.py`: Telegram Bot API integration for sending messages and managing connections
+  - `scheduler.py`: APScheduler-based reminder scheduler for automated notifications
 - **app/models/**: Pydantic models for database documents
 - **app/schemas/**: Pydantic models for API request/response validation
 
 ### Database Architecture
 
 MongoDB collections:
-- **users**: User documents with authentication, verification, and subscription fields
+- **users**: User documents with authentication, verification, subscription, and Telegram fields
   - Key fields: `email`, `hashed_password`, `is_verified`, `verification_token`, `stripe_customer_id`, `subscription_plan`, `subscription_status`
+  - Telegram fields: `telegram_chat_id`, `telegram_username`, `telegram_connected_at`, `telegram_notifications_enabled`, `telegram_reminder_time`, `telegram_connection_token`, `telegram_connection_token_expires`
   - Plans: "free" (default), "pro", "premium"
 - **transactions**: Financial transaction records with currency conversion
   - Key fields: `user_id`, `amount`, `currency`, `amount_gel`, `exchange_rate`, `transaction_date`, `type` (income/expense), `category`, `description`
@@ -133,6 +136,49 @@ These must be updated in the Stripe dashboard and service code for production.
 - Singleton service pattern with in-memory caching
 - GEL to GEL always returns rate of 1.0
 
+### Telegram Integration Architecture
+
+**Purpose**: Automated reminders and notifications via Telegram bot
+
+**User Connection Flow**:
+1. User requests connection via `POST /telegram/connect`
+2. Backend generates secure token and Telegram deep link
+3. User clicks deep link → Opens bot in Telegram → Clicks "Start"
+4. Bot receives `/start TOKEN` command via webhook
+5. Backend verifies token and links `chat_id` to user account
+6. User receives welcome message
+
+**Reminder Types**:
+- **Daily Transaction Reminders**: Sent at user's preferred time (default: 21:00)
+- **Weekly Summaries**: Monday 9 AM - Income/expense overview for past week
+- **Monthly Reports**: 1st of month, 10 AM - Detailed monthly financial report
+- **Subscription Alerts**: 14, 7, 3 days before expiration
+- **Inactivity Alerts**: Every 3 days if no transactions in 7+ days
+
+**Scheduler Architecture**:
+- APScheduler manages background jobs
+- Jobs registered on application startup
+- Graceful shutdown on application stop
+- Jobs query users with `telegram_chat_id` and `telegram_notifications_enabled=true`
+- Failed deliveries (blocked bot) automatically disable notifications
+
+**Message Formatting**:
+- HTML formatting for rich text
+- Emojis for visual appeal
+- Structured data presentation (income/expense breakdown)
+- Localized to user timezone (stored in UTC)
+
+**Key Services**:
+- `TelegramService`: Bot API interactions, message sending, connection management
+- `ReminderScheduler`: Job scheduling, reminder logic, statistics calculation
+- Both services initialized on app startup, gracefully shutdown on stop
+
+**Error Handling**:
+- Blocked bot → Disable notifications automatically
+- Invalid tokens → Clear message to user
+- Rate limiting on connection attempts
+- Retry logic with exponential backoff
+
 ## Key Integration Points
 
 ### Webhook Endpoint
@@ -155,6 +201,7 @@ Required environment variables (`.env` file):
 - Stripe: `STRIPE_SECRET_KEY`, `STRIPE_PUBLIC_KEY`, `STRIPE_WEBHOOK_SECRET`
 - Email: `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM`, `MAIL_FROM_NAME`
 - App: `FRONTEND_URL`, `CORS_ORIGINS`, `VERIFICATION_TOKEN_EXPIRE_HOURS`
+- Telegram (optional): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_URL`
 
 ## Common Patterns
 
@@ -188,3 +235,12 @@ Production checklist:
 - Update CORS origins for production domains
 - Review and adjust JWT token expiration times
 - Set up monitoring for webhook failures and payment errors
+- Create Telegram bot via BotFather and configure tokens (if using Telegram features)
+- Set up Telegram webhook URL in production (optional, can use polling)
+- Monitor Telegram message delivery rates and failed notifications
+
+## Additional Documentation
+
+For detailed guides on specific features:
+- **Telegram Integration**: See `TELEGRAM_INTEGRATION_GUIDE.md` for complete setup, API reference, and frontend integration examples
+- **Charts & Statistics**: See `CHARTS_AND_STATS_GUIDE.md` for transaction analytics and visualization endpoints

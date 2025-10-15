@@ -1,6 +1,6 @@
 # FastAPI MongoDB Authentication API Overview
 
-Your backend API is a comprehensive authentication system built with FastAPI and MongoDB, providing essential user authentication, account management, **transaction tracking with currency conversion**, chat functionality, and **Stripe subscription management**. Here's what it does:
+Your backend API is a comprehensive authentication system built with FastAPI and MongoDB, providing essential user authentication, account management, **transaction tracking with currency conversion**, **Telegram bot integration with automated reminders**, chat functionality, and **Stripe subscription management**. Here's what it does:
 
 ## Core Functionality
 
@@ -8,6 +8,7 @@ Your backend API is a comprehensive authentication system built with FastAPI and
 - **User Authentication**: Validates credentials and issues access tokens (OAuth2/JWT based)
 - **Account Management**: Allows users to view their profile information
 - **💰 Income Tracking**: Track income in multiple currencies with automatic conversion to GEL
+- **📱 Telegram Integration**: Automated reminders and notifications via Telegram bot
 - **Chat Streaming**: Provides real-time chat streaming capabilities with message history
 - **🆕 Subscription Management**: Complete Stripe integration with multiple subscription tiers
 
@@ -49,12 +50,20 @@ Your backend API is a comprehensive authentication system built with FastAPI and
 
 ### 💰 Income Tracking
 
+**Transaction Management:**
 - `POST /transactions/`: Create a new income transaction with auto-conversion to GEL
 - `GET /transactions/`: List income transactions (with filtering by date, currency, category)
-- `GET /transactions/stats`: Get income statistics (total income, breakdown by category)
 - `GET /transactions/{id}`: Get a specific transaction
 - `PUT /transactions/{id}`: Update a transaction
 - `DELETE /transactions/{id}`: Delete a transaction
+
+**Statistics & Analytics:**
+- `GET /transactions/stats`: Get overall income statistics (total income, breakdown by category)
+- `GET /transactions/stats/monthly`: Get monthly breakdown for the year
+- `GET /transactions/stats/current-month`: Get current month stats with projections
+- `GET /transactions/stats/chart-data`: Get time-series data for charts (daily/weekly/monthly)
+
+**Currency Information:**
 - `GET /transactions/currencies/available`: Get list of supported currencies
 - `GET /transactions/currencies/rate`: Get exchange rate for a currency
 
@@ -63,6 +72,16 @@ Your backend API is a comprehensive authentication system built with FastAPI and
 - `/chat/`: Create a new chat or list existing chats
 - `/chat/{chat_id}`: Get, update, or delete a specific chat
 - `/chat/stream`: Stream chat responses in real-time
+
+### 📱 Telegram Integration
+
+- `/telegram/connect`: Generate connection token and deep link to connect Telegram account
+- `/telegram/disconnect`: Disconnect Telegram account
+- `/telegram/webhook`: Webhook endpoint for bot updates (called by Telegram)
+- `/telegram/status`: Get current Telegram connection status
+- `/telegram/settings`: Get/update notification preferences
+- `/telegram/test-reminder`: Send test reminder to verify integration
+- `/telegram/bot-info`: Get bot information
 
 ## 🎯 Subscription Tiers
 
@@ -257,11 +276,40 @@ DELETE /chat/{chat_id}
 - **Efficient caching**: Exchange rates cached for 1 hour to minimize API calls
 - **Income categories**: salary, freelance, business, investment, rental_income, dividends, bonus, commission, other
 
+**📊 Advanced Analytics:**
+- **Monthly breakdowns**: Get income statistics for each month of the year
+- **Current month tracking**: Track current month progress with daily averages and projections
+- **Month-over-month comparison**: See percentage change vs previous month
+- **Chart-ready data**: Time-series data for daily, weekly, and monthly charts
+- **Projected income**: Automatic projection of end-of-month income based on current pace
+
+## 📱 Telegram Bot Features
+
+- **Automated Reminders**: Daily transaction reminders at user's preferred time
+- **Weekly Summaries**: Income/expense overview sent every Monday
+- **Monthly Reports**: Detailed financial reports on the 1st of each month
+- **Subscription Alerts**: Notifications 14, 7, and 3 days before subscription expires
+- **Inactivity Alerts**: Re-engagement messages for inactive users
+- **Easy Connection**: One-click deep link to connect Telegram account
+- **Customizable Settings**: Control notification preferences and timing
+- **Test Reminders**: Test your bot integration with sample reminders
+- **Rich Formatting**: HTML-formatted messages with emojis for better readability
+- **Smart Error Handling**: Automatic notification disable if user blocks bot
+
+**Setup Steps:**
+1. Create bot via [@BotFather](https://t.me/BotFather) on Telegram
+2. Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME` to `.env`
+3. Restart application - scheduler starts automatically
+4. Users connect via Settings → Connect Telegram in your app
+5. Bot sends welcome message and starts automated reminders
+
 ## 📚 Documentation
 
 - **[API Quick Reference](API_QUICK_REFERENCE.md)** ⚡ - Quick reference for all API endpoints with curl examples
 - **[Frontend Integration Guide](FRONTEND_INTEGRATION.md)** 💻 - Complete React integration examples and components
 - **[Transaction Management Guide](TRANSACTIONS_GUIDE.md)** 💰 - Detailed transaction API documentation
+- **[Charts & Statistics Guide](CHARTS_AND_STATS_GUIDE.md)** 📊 - Analytics and chart data endpoints
+- **[Telegram Integration Guide](TELEGRAM_INTEGRATION_GUIDE.md)** 📱 - Complete Telegram bot setup and usage guide
 - **[Stripe Setup Guide](STRIPE_SETUP.md)** 💳 - Stripe configuration and subscription management
 - **[Architecture Guide](CLAUDE.md)** 🏗️ - System architecture and development guide
 

@@ -24,6 +24,15 @@ class UserInDB(UserBase):
     subscription_end_date: Optional[datetime] = None
     last_login: Optional[datetime] = None
 
+    # Telegram integration fields
+    telegram_chat_id: Optional[int] = None
+    telegram_username: Optional[str] = None
+    telegram_connected_at: Optional[datetime] = None
+    telegram_notifications_enabled: bool = True
+    telegram_reminder_time: str = "21:00"  # Default daily reminder time (HH:MM format)
+    telegram_connection_token: Optional[str] = None
+    telegram_connection_token_expires: Optional[datetime] = None
+
 class User(UserBase):
     id: str
     created_at: datetime
