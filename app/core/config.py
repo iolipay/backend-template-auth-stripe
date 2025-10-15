@@ -37,9 +37,19 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_USERNAME: Optional[str] = None
     TELEGRAM_WEBHOOK_URL: Optional[str] = None  # For production webhook mode
 
+    # Tax Filing Service Settings
+    TAX_RATE: float = 0.01  # 1% - Georgian small business tax (fixed by law)
+    SERVICE_FEE_RATE: float = 0.02  # 2% - Our service fee for filing (configurable)
+    # Total fee user pays = TAX_RATE + SERVICE_FEE_RATE = 3% of income
+
     @property
     def CORS_ORIGINS_LIST(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+
+    @property
+    def TOTAL_FEE_RATE(self) -> float:
+        """Total fee rate: tax + service fee"""
+        return self.TAX_RATE + self.SERVICE_FEE_RATE
 
     class Config:
         env_file = ".env"

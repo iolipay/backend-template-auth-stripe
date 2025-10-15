@@ -437,3 +437,39 @@ async def get_filing_service_status(
     except Exception as e:
         logger.error(f"Error getting filing service status: {e}")
         raise HTTPException(status_code=500, detail="Failed to get filing service status")
+
+
+@router.get(
+    "/filing-service/fee-structure",
+    description="Get current fee structure for admin filing service"
+)
+async def get_fee_structure():
+    """
+    Get current fee structure
+
+    Returns:
+    - Tax rate (1% - goes to government)
+    - Service fee rate (default 2% - configurable, goes to company)
+    - Total fee rate (tax + service = 3% by default)
+
+    No authentication required - public pricing information
+    """
+    from app.core.config import settings
+
+    return {
+        "tax_rate": settings.TAX_RATE,
+        "tax_rate_percent": f"{settings.TAX_RATE * 100}%",
+        "tax_rate_description": "Georgian small business tax (goes to government)",
+        "service_fee_rate": settings.SERVICE_FEE_RATE,
+        "service_fee_rate_percent": f"{settings.SERVICE_FEE_RATE * 100}%",
+        "service_fee_description": "Our service fee for filing your declaration",
+        "total_fee_rate": settings.TOTAL_FEE_RATE,
+        "total_fee_rate_percent": f"{settings.TOTAL_FEE_RATE * 100}%",
+        "explanation": f"You pay {settings.TOTAL_FEE_RATE * 100}% of your income ({settings.TAX_RATE * 100}% tax + {settings.SERVICE_FEE_RATE * 100}% service fee)",
+        "example": {
+            "income": 22000,
+            "tax_to_government": round(22000 * settings.TAX_RATE, 2),
+            "service_fee_to_us": round(22000 * settings.SERVICE_FEE_RATE, 2),
+            "total_you_pay": round(22000 * settings.TOTAL_FEE_RATE, 2)
+        }
+    }

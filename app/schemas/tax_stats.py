@@ -270,6 +270,26 @@ class TaxComparison(BaseModel):
 
 # ========== Declaration Management ==========
 
+class FilingServicePaymentInfo(BaseModel):
+    """Preview of admin filing service payment breakdown"""
+    available: bool = Field(..., description="Whether filing service is available for this declaration")
+    tax_amount: float = Field(..., description="Tax amount (1% to government)")
+    service_fee: float = Field(..., description="Service fee (configurable % to company)")
+    total_payment: float = Field(..., description="Total payment amount")
+    breakdown: str = Field(..., description="Human-readable fee breakdown")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "available": True,
+                "tax_amount": 220.00,
+                "service_fee": 440.00,
+                "total_payment": 660.00,
+                "breakdown": "3% of income (1% tax + 2% service fee)"
+            }
+        }
+
+
 class DeclarationDetails(BaseModel):
     """Detailed information for a specific declaration"""
     year: int
@@ -283,6 +303,7 @@ class DeclarationDetails(BaseModel):
     submitted_date: Optional[datetime] = None
     days_until_deadline: Optional[int] = None
     is_overdue: bool = Field(default=False)
+    filing_service: Optional[FilingServicePaymentInfo] = Field(None, description="Admin filing service payment preview")
 
     class Config:
         json_schema_extra = {
@@ -297,7 +318,14 @@ class DeclarationDetails(BaseModel):
                 "filing_deadline": "2025-11-15T23:59:59Z",
                 "submitted_date": None,
                 "days_until_deadline": 5,
-                "is_overdue": False
+                "is_overdue": False,
+                "filing_service": {
+                    "available": True,
+                    "tax_amount": 220.00,
+                    "service_fee": 440.00,
+                    "total_payment": 660.00,
+                    "breakdown": "3% of income (1% tax + 2% service fee)"
+                }
             }
         }
 
@@ -365,7 +393,10 @@ class PaymentResponse(BaseModel):
     """Mock payment confirmation"""
     declaration_id: str
     payment_id: str = Field(..., description="Mock payment ID")
-    amount: float
+    income_gel: float = Field(..., description="Total income for the month")
+    tax_amount: float = Field(..., description="Tax to government (1%)")
+    service_fee: float = Field(..., description="Service fee to company (configurable %)")
+    total_amount: float = Field(..., description="Total payment amount (tax + service fee)")
     status: str = Field(..., description="Payment status: paid")
     paid_at: datetime
     message: str = Field(default="Payment successful. Your declaration will be filed by our admin team.")

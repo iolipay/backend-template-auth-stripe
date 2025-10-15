@@ -11,7 +11,7 @@ FastAPI backend template with MongoDB, JWT authentication, email verification, S
 - Stripe subscription management (Free, Pro, Premium tiers)
 - Multi-currency transaction tracking with automatic GEL conversion
 - Georgian small business tax management (1% rate, 500k GEL threshold)
-- **Admin-managed tax filing service** (users pay 50 GEL, admins file declarations)
+- **Admin-managed tax filing service** (users pay 3% of income: 1% tax + 2% service fee, admins file declarations)
 - Telegram bot integration with automated reminders
 - Chat functionality with streaming support
 

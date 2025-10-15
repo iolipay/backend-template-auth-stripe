@@ -25,6 +25,7 @@ from app.schemas.tax_stats import (
     YearlyTaxSummary,
     TaxComparison,
     DeclarationDetails,
+    FilingServicePaymentInfo,
     TaxChartData,
     TaxChartDataPoint
 )
@@ -549,6 +550,61 @@ class TaxStatsService:
 
     # ========== Declaration Management ==========
 
+    def _calculate_filing_service_payment(self, income_gel: float, status: str, year: int, month: int) -> Optional[FilingServicePaymentInfo]:
+        """
+        Calculate filing service payment breakdown
+
+        Args:
+            income_gel: Monthly income in GEL
+            status: Declaration status
+            year: Declaration year
+            month: Declaration month
+
+        Returns:
+            FilingServicePaymentInfo or None if not available
+        """
+        from app.core.config import settings
+
+        # Filing service not available for already submitted/filed declarations
+        unavailable_statuses = [
+            DeclarationStatus.SUBMITTED.value,
+            DeclarationStatus.FILED_BY_ADMIN.value,
+            DeclarationStatus.OVERDUE.value
+        ]
+
+        if status in unavailable_statuses:
+            return None
+
+        # No income = no filing service needed
+        if income_gel <= 0:
+            return None
+
+        # Only allow filing service for PREVIOUS month (not current or future)
+        current_date = datetime.now(timezone.utc)
+        current_year = current_date.year
+        current_month = current_date.month
+
+        # Calculate if this is current or future month
+        if year > current_year:
+            return None  # Future year
+        if year == current_year and month >= current_month:
+            return None  # Current or future month
+
+        # Calculate amounts
+        tax_amount = income_gel * settings.TAX_RATE
+        service_fee = income_gel * settings.SERVICE_FEE_RATE
+        total_payment = income_gel * settings.TOTAL_FEE_RATE
+
+        breakdown = f"{settings.TOTAL_FEE_RATE * 100}% of income ({settings.TAX_RATE * 100}% tax + {settings.SERVICE_FEE_RATE * 100}% service fee)"
+
+        return FilingServicePaymentInfo(
+            available=True,
+            tax_amount=round(tax_amount, 2),
+            service_fee=round(service_fee, 2),
+            total_payment=round(total_payment, 2),
+            breakdown=breakdown
+        )
+
     async def get_declaration_details(self, user_id: str, year: int, month: int) -> Optional[DeclarationDetails]:
         """Get detailed information for a specific declaration"""
         declaration = await self._get_or_create_declaration(user_id, year, month)
@@ -573,6 +629,12 @@ class TaxStatsService:
 
         month_name = datetime(year, month, 1).strftime("%B %Y")
 
+        # Calculate filing service payment info
+        filing_service = self._calculate_filing_service_payment(
+            declaration["income_gel"],
+            declaration["status"]
+        )
+
         return DeclarationDetails(
             year=year,
             month=month,
@@ -584,7 +646,8 @@ class TaxStatsService:
             filing_deadline=filing_deadline,
             submitted_date=declaration.get("submitted_date"),
             days_until_deadline=days_until,
-            is_overdue=is_overdue
+            is_overdue=is_overdue,
+            filing_service=filing_service
         )
 
     async def mark_declaration_submitted(
@@ -826,9 +889,13 @@ class TaxStatsService:
         User requests admin filing service (mock payment)
 
         Transitions declaration from PENDING -> AWAITING_PAYMENT
+
+        Payment amount = (TAX_RATE + SERVICE_FEE_RATE) * income
+        Default: (1% + 2%) * income = 3% of income
         """
         from bson import ObjectId
         import uuid
+        from app.core.config import settings
 
         # Get declaration
         declaration = await self._get_or_create_declaration(user_id, year, month)
@@ -842,6 +909,12 @@ class TaxStatsService:
         if declaration.get("status") not in ["pending", "overdue"]:
             raise ValueError(f"Cannot request filing service for declaration with status: {declaration.get('status')}")
 
+        # Calculate payment amount: (tax_rate + service_fee_rate) * income
+        income = declaration["income_gel"]
+        tax_amount = declaration["tax_due_gel"]  # 1% to government
+        service_fee = income * settings.SERVICE_FEE_RATE  # x% to us
+        total_payment = income * settings.TOTAL_FEE_RATE  # (1% + x%)
+
         # Generate mock payment ID
         mock_payment_id = f"MOCK_PAY_{uuid.uuid4().hex[:12].upper()}"
 
@@ -852,7 +925,8 @@ class TaxStatsService:
                 "$set": {
                     "status": "awaiting_payment",
                     "payment_status": "unpaid",
-                    "payment_amount": 50.00,  # Fixed fee for now
+                    "payment_amount": round(total_payment, 2),
+                    "service_fee_rate": settings.SERVICE_FEE_RATE,
                     "filing_method": "admin_filed",
                     "mock_payment_id": mock_payment_id,
                     "updated_at": datetime.now(timezone.utc)
@@ -860,14 +934,22 @@ class TaxStatsService:
             }
         )
 
-        logger.info(f"User {user_id} requested filing service for {year}-{month:02d}")
+        logger.info(f"User {user_id} requested filing service for {year}-{month:02d}, amount: {total_payment:.2f} GEL")
 
         return {
             "declaration_id": str(declaration["_id"]),
             "payment_id": mock_payment_id,
-            "amount": 50.00,
+            "income_gel": income,
+            "tax_amount": round(tax_amount, 2),  # 1% to government
+            "service_fee": round(service_fee, 2),  # x% to us
+            "total_amount": round(total_payment, 2),  # (1% + x%)
+            "fee_breakdown": {
+                "tax_rate": f"{settings.TAX_RATE * 100}%",
+                "service_rate": f"{settings.SERVICE_FEE_RATE * 100}%",
+                "total_rate": f"{settings.TOTAL_FEE_RATE * 100}%"
+            },
             "status": "awaiting_payment",
-            "message": "Please proceed with payment to have this declaration filed by our admin team."
+            "message": f"Total fee: {round(total_payment, 2)} GEL ({settings.TOTAL_FEE_RATE * 100}% of {income} GEL income)"
         }
 
     async def process_mock_payment(self, user_id: str, year: int, month: int) -> Dict[str, Any]:
@@ -877,6 +959,7 @@ class TaxStatsService:
         Transitions declaration from AWAITING_PAYMENT -> PAYMENT_RECEIVED (ready for admin)
         """
         from bson import ObjectId
+        from app.core.config import settings
 
         # Get declaration
         declaration = await self.db.tax_declarations.find_one({
@@ -891,6 +974,13 @@ class TaxStatsService:
         if declaration.get("status") != "awaiting_payment":
             raise ValueError(f"Cannot process payment for declaration with status: {declaration.get('status')}")
 
+        # Get amounts
+        income = declaration["income_gel"]
+        tax_amount = declaration["tax_due_gel"]
+        service_fee_rate = declaration.get("service_fee_rate", settings.SERVICE_FEE_RATE)
+        service_fee = income * service_fee_rate
+        total_payment = declaration.get("payment_amount")
+
         # Update declaration - mark as paid and ready for admin
         await self.db.tax_declarations.update_one(
             {"_id": ObjectId(declaration["_id"])},
@@ -904,12 +994,15 @@ class TaxStatsService:
             }
         )
 
-        logger.info(f"Mock payment processed for user {user_id}, declaration {year}-{month:02d}")
+        logger.info(f"Mock payment processed for user {user_id}, declaration {year}-{month:02d}, amount: {total_payment:.2f} GEL")
 
         return {
             "declaration_id": str(declaration["_id"]),
             "payment_id": declaration.get("mock_payment_id"),
-            "amount": declaration.get("payment_amount", 50.00),
+            "income_gel": income,
+            "tax_amount": round(tax_amount, 2),
+            "service_fee": round(service_fee, 2),
+            "total_amount": round(total_payment, 2),
             "status": "paid",
             "paid_at": datetime.now(timezone.utc),
             "message": "Payment successful. Your declaration will be filed by our admin team."

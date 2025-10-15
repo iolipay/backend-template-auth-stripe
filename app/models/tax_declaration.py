@@ -79,7 +79,8 @@ class TaxDeclarationInDB(BaseModel):
 
     # Payment tracking (MOCK)
     payment_status: str = "unpaid"
-    payment_amount: float = 50.00
+    payment_amount: float = 0.0  # Calculated as (TAX_RATE + SERVICE_FEE_RATE) * income
+    service_fee_rate: float = 0.02  # Service fee percentage (configurable, default 2%)
     payment_date: Optional[datetime] = None
     mock_payment_id: Optional[str] = None
 
