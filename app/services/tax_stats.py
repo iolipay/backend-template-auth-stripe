@@ -595,6 +595,10 @@ class TaxStatsService:
         service_fee = income_gel * settings.SERVICE_FEE_RATE
         total_payment = income_gel * settings.TOTAL_FEE_RATE
 
+        # If payment would be 0, no filing service needed
+        if total_payment <= 0:
+            return None
+
         breakdown = f"{settings.TOTAL_FEE_RATE * 100}% of income ({settings.TAX_RATE * 100}% tax + {settings.SERVICE_FEE_RATE * 100}% service fee)"
 
         return FilingServicePaymentInfo(
@@ -632,7 +636,9 @@ class TaxStatsService:
         # Calculate filing service payment info
         filing_service = self._calculate_filing_service_payment(
             declaration["income_gel"],
-            declaration["status"]
+            declaration["status"],
+            year,
+            month
         )
 
         return DeclarationDetails(
@@ -902,6 +908,16 @@ class TaxStatsService:
         if not declaration:
             raise ValueError("Declaration not found")
 
+        # Validate this is a previous month (not current or future)
+        current_date = datetime.now(timezone.utc)
+        if year > current_date.year or (year == current_date.year and month >= current_date.month):
+            raise ValueError("Filing service only available for previous months")
+
+        # Check if has income
+        income = declaration["income_gel"]
+        if income <= 0:
+            raise ValueError("No income to declare for this month")
+
         # Check if already paid/filed
         if declaration.get("payment_status") == "paid":
             raise ValueError("Declaration already paid for")
@@ -909,11 +925,14 @@ class TaxStatsService:
         if declaration.get("status") not in ["pending", "overdue"]:
             raise ValueError(f"Cannot request filing service for declaration with status: {declaration.get('status')}")
 
-        # Calculate payment amount: (tax_rate + service_fee_rate) * income
-        income = declaration["income_gel"]
+        # Calculate payment amounts
         tax_amount = declaration["tax_due_gel"]  # 1% to government
         service_fee = income * settings.SERVICE_FEE_RATE  # x% to us
         total_payment = income * settings.TOTAL_FEE_RATE  # (1% + x%)
+
+        # If payment would be 0, no filing service needed
+        if total_payment <= 0:
+            raise ValueError("Payment amount is 0, no filing service needed")
 
         # Generate mock payment ID
         mock_payment_id = f"MOCK_PAY_{uuid.uuid4().hex[:12].upper()}"
