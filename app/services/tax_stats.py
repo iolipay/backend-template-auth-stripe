@@ -191,8 +191,11 @@ class TaxStatsService:
                     transaction_count=declaration.get("transaction_count", 0)
                 ))
 
-        avg_monthly_income = total_income / len([m for m in months_data if m.income_gel > 0]) if months_data else 0.0
-        avg_monthly_tax = total_tax / len([m for m in months_data if m.tax_due_gel > 0]) if months_data else 0.0
+        months_with_income = [m for m in months_data if m.income_gel > 0]
+        months_with_tax = [m for m in months_data if m.tax_due_gel > 0]
+
+        avg_monthly_income = total_income / len(months_with_income) if months_with_income else 0.0
+        avg_monthly_tax = total_tax / len(months_with_tax) if months_with_tax else 0.0
 
         return MonthlyTaxBreakdown(
             year=year,
